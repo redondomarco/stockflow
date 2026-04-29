@@ -45,6 +45,7 @@ class Product(models.Model):
     stock_min = models.PositiveIntegerField(default=5, help_text='Stock mínimo para alertas')
     fixed_price = models.BooleanField(default=False, help_text='Si está activo, el multiplicador de lista de precios no se aplica')
     image = models.ImageField(upload_to='products/', blank=True, null=True)
+    sort_order = models.IntegerField(default=0, help_text='Índice de orden de visualización (menor = primero)')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -52,7 +53,7 @@ class Product(models.Model):
     class Meta:
         verbose_name = 'Producto'
         verbose_name_plural = 'Productos'
-        ordering = ['-created_at']
+        ordering = ['sort_order', 'name']
 
     def __str__(self):
         return f"{self.sku} - {self.name}"

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { productsApi } from '../services/api'
 import { Plus, Search, Edit2, ArrowUpDown, X, Package, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react'
 
-const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, fixed_price: false, is_active: true }
+const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, fixed_price: false, is_active: true }
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([])
@@ -314,6 +314,10 @@ export default function ProductsPage() {
                 <div className="form-group" style={{ maxWidth: 200 }}>
                   <label className="form-label">Stock mínimo</label>
                   <input className="form-input mono" type="number" value={form.stock_min} onChange={f('stock_min')} />
+                </div>
+                <div className="form-group" style={{ maxWidth: 200 }}>
+                  <label className="form-label">Orden</label>
+                  <input className="form-input mono" type="number" value={form.sort_order} onChange={f('sort_order')} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 22 }}>
                   <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>

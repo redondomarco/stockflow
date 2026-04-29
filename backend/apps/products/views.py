@@ -34,11 +34,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category', 'supplier').filter(is_active=True)
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['category', 'supplier', 'is_active']
     search_fields = ['name', 'sku', 'description']
-    ordering_fields = ['name', 'price', 'stock', 'created_at']
-    ordering = ['-created_at']
+    ordering_fields = ['sort_order', 'name', 'price', 'stock', 'created_at']
+    ordering = ['sort_order', 'name']
 
     def get_queryset(self):
         qs = Product.objects.select_related('category', 'supplier')
@@ -122,13 +123,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="productos.csv"'
         response.write('﻿')  # BOM para compatibilidad con Excel
         writer = csv.writer(response)
-        writer.writerow(['sku', 'nombre', 'descripcion', 'categoria', 'proveedor', 'precio', 'costo', 'stock', 'stock_min'])
+        writer.writerow(['sku', 'nombre', 'descripcion', 'categoria', 'proveedor', 'precio', 'costo', 'stock', 'stock_min', 'orden'])
         for p in products:
             writer.writerow([
                 p.sku, p.name, p.description,
                 p.category.name if p.category else '',
                 p.supplier.name if p.supplier else '',
-                p.price, p.cost, p.stock, p.stock_min,
+                p.price, p.cost, p.stock, p.stock_min, p.sort_order,
             ])
         return response
 
@@ -163,10 +164,20 @@ class ProductViewSet(viewsets.ModelViewSet):
                 errors.append(f'Fila {i}: precio inválido "{price_raw}"')
                 continue
 
+            sort_order_raw = (row.get('orden') or '').strip()
+            try:
+                sort_order = int(sort_order_raw)
+            except (ValueError, TypeError):
+                sort_order = 0
+
             existing = Product.objects.filter(sku=sku).first()
             if existing:
+                update_fields = ['price', 'updated_at']
                 existing.price = price
-                existing.save(update_fields=['price', 'updated_at'])
+                if sort_order_raw != '':
+                    existing.sort_order = sort_order
+                    update_fields.append('sort_order')
+                existing.save(update_fields=update_fields)
                 updated += 1
                 continue
 
@@ -205,6 +216,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 cost=cost,
                 stock=stock,
                 stock_min=stock_min,
+                sort_order=sort_order,
             )
             created += 1
 

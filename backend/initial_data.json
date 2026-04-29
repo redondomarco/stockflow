@@ -1,0 +1,28 @@
+[
+  {
+    "model": "auth.user",
+    "pk": 1,
+    "fields": {
+      "username": "admin",
+      "email": "admin@stockflow.com",
+      "is_staff": true,
+      "is_superuser": true,
+      "password": "pbkdf2_sha256$600000$stockflow$8Y3yIE9L7kVYtqv0mzq6Vo+y3oH0/X+8LGw8Hq1EYoM="
+    }
+  },
+  {
+    "model": "apps.products.category",
+    "pk": 1,
+    "fields": {"name": "Electrónica", "description": "Productos electrónicos", "created_at": "2024-01-01T00:00:00Z"}
+  },
+  {
+    "model": "apps.products.category",
+    "pk": 2,
+    "fields": {"name": "Ropa", "description": "Indumentaria", "created_at": "2024-01-01T00:00:00Z"}
+  },
+  {
+    "model": "apps.products.category",
+    "pk": 3,
+    "fields": {"name": "Hogar", "description": "Artículos del hogar", "created_at": "2024-01-01T00:00:00Z"}
+  }
+]

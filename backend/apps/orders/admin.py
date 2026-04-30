@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Customer, Order, OrderItem, OrderStatusHistory
+from .models import Customer, Order, OrderItem, OrderStatusHistory, Driver, DeliveryRoute, DeliveryRouteItem
 
 
 class OrderItemInline(admin.TabularInline):
@@ -27,3 +27,24 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ['order_number', 'customer__name']
     inlines = [OrderItemInline, OrderStatusHistoryInline]
     readonly_fields = ['order_number', 'subtotal', 'total', 'created_at', 'updated_at']
+
+
+@admin.register(Driver)
+class DriverAdmin(admin.ModelAdmin):
+    list_display = ['name', 'phone', 'is_active', 'created_at']
+    search_fields = ['name']
+    list_filter = ['is_active']
+
+
+class DeliveryRouteItemInline(admin.TabularInline):
+    model = DeliveryRouteItem
+    extra = 0
+    raw_id_fields = ['order']
+
+
+@admin.register(DeliveryRoute)
+class DeliveryRouteAdmin(admin.ModelAdmin):
+    list_display = ['route_number', 'date', 'status', 'created_at']
+    list_filter = ['status']
+    readonly_fields = ['route_number', 'created_at', 'updated_at']
+    inlines = [DeliveryRouteItemInline]

@@ -5,14 +5,17 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.users.permissions import SectionPermission
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, Driver, DeliveryRoute, DeliveryRouteItem
 from .serializers import (
     PriceListSerializer, CustomerSerializer, OrderSerializer,
-    OrderItemSerializer, OrderStatusHistorySerializer
+    OrderItemSerializer, OrderStatusHistorySerializer,
+    DriverSerializer, DeliveryRouteSerializer, DeliveryRouteWriteSerializer,
+    DeliveryRouteItemInputSerializer,
 )
 from apps.products.models import Product, StockMovement
 from apps.products.serializers import ProductSerializer
@@ -29,7 +32,8 @@ VALID_TRANSITIONS = {
 class PriceListViewSet(viewsets.ModelViewSet):
     queryset = PriceList.objects.all().order_by('name')
     serializer_class = PriceListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'price_lists'
     search_fields = ['name']
 
     @action(detail=False, methods=['get'])
@@ -117,7 +121,8 @@ class PriceListViewSet(viewsets.ModelViewSet):
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all().order_by("name")
     serializer_class = CustomerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'customers'
     search_fields = ['name', 'email', 'phone']
     ordering = ['name']
 
@@ -269,7 +274,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.select_related('customer', 'created_by').prefetch_related('items', 'status_history', 'payments')
     serializer_class = OrderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'orders'
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['status', 'customer']
     search_fields = ['order_number', 'customer__name', 'customer__email']
@@ -535,3 +541,121 @@ class OrderViewSet(viewsets.ModelViewSet):
             'cancelled': orders.filter(status='cancelled').count(),
             'total_revenue': float(orders.filter(status='delivered').aggregate(Sum('total'))['total__sum'] or 0),
         })
+
+
+VALID_ROUTE_TRANSITIONS = {
+    'draft': ['in_progress', 'cancelled'],
+    'in_progress': ['completed', 'cancelled'],
+    'cancelled': ['draft'],
+}
+
+
+class DriverViewSet(viewsets.ModelViewSet):
+    serializer_class = DriverSerializer
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'routes'
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = Driver.objects.all()
+        if self.request.query_params.get('active'):
+            return qs.filter(is_active=True)
+        return qs
+
+
+class DeliveryRouteViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'routes'
+    pagination_class = None
+
+    def get_queryset(self):
+        return DeliveryRoute.objects.prefetch_related(
+            'items__order__items',
+            'items__order__customer',
+        ).select_related('driver').all()
+
+    def get_serializer_class(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return DeliveryRouteWriteSerializer
+        return DeliveryRouteSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = DeliveryRouteWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        route = serializer.save()
+        return Response(DeliveryRouteSerializer(route).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def available_orders(self, request):
+        """Pedidos pendientes/parciales que no están en ninguna hoja activa."""
+        active_order_ids = DeliveryRouteItem.objects.filter(
+            route__status__in=['draft', 'in_progress']
+        ).values_list('order_id', flat=True)
+        orders = Order.objects.filter(
+            status__in=['pending', 'partial']
+        ).exclude(id__in=active_order_ids).select_related('customer').prefetch_related('items')
+        from .serializers import OrderSerializer as OS
+        return Response(OS(orders, many=True).data)
+
+    @action(detail=True, methods=['post'])
+    def change_status(self, request, pk=None):
+        route = self.get_object()
+        new_status = request.data.get('status')
+        allowed = VALID_ROUTE_TRANSITIONS.get(route.status, [])
+        if new_status not in allowed:
+            return Response(
+                {'error': f'No se puede pasar de {route.get_status_display()} a {new_status}'},
+                status=400,
+            )
+        route.status = new_status
+        route.save()
+        return Response(DeliveryRouteSerializer(route).data)
+
+    @action(detail=True, methods=['post'])
+    def add_orders(self, request, pk=None):
+        route = self.get_object()
+        if route.status != 'draft':
+            return Response({'error': 'Solo se pueden agregar pedidos a hojas en borrador.'}, status=400)
+        serializer = DeliveryRouteItemInputSerializer(data=request.data.get('items', []), many=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        items_data = serializer.validated_data
+        order_ids = [item['order'].id for item in items_data]
+        conflicts = DeliveryRouteItem.objects.filter(
+            order_id__in=order_ids,
+            route__status__in=['draft', 'in_progress'],
+        ).exclude(route=route)
+        if conflicts.exists():
+            nums = ', '.join(c.order.order_number for c in conflicts)
+            return Response({'error': f'Los pedidos {nums} ya están en otra hoja activa.'}, status=400)
+        for idx, item_data in enumerate(items_data):
+            DeliveryRouteItem.objects.get_or_create(
+                route=route, order=item_data['order'],
+                defaults={'notes': item_data.get('notes', ''),
+                          'sort_order': route.items.count() + idx},
+            )
+        route.refresh_from_db()
+        return Response(DeliveryRouteSerializer(route).data)
+
+    @action(detail=True, methods=['post'])
+    def remove_item(self, request, pk=None):
+        route = self.get_object()
+        if route.status != 'draft':
+            return Response({'error': 'Solo se pueden quitar pedidos de hojas en borrador.'}, status=400)
+        item_id = request.data.get('item_id')
+        DeliveryRouteItem.objects.filter(id=item_id, route=route).delete()
+        route.refresh_from_db()
+        return Response(DeliveryRouteSerializer(route).data)
+
+    @action(detail=True, methods=['post'])
+    def update_item(self, request, pk=None):
+        route = self.get_object()
+        item_id = request.data.get('item_id')
+        item = DeliveryRouteItem.objects.filter(id=item_id, route=route).first()
+        if not item:
+            return Response({'error': 'Ítem no encontrado.'}, status=404)
+        if 'notes' in request.data:
+            item.notes = request.data['notes']
+        item.save()
+        route.refresh_from_db()
+        return Response(DeliveryRouteSerializer(route).data)

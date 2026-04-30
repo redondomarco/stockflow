@@ -69,7 +69,7 @@ class Order(models.Model):
     def save(self, *args, **kwargs):
         if not self.order_number:
             import uuid
-            self.order_number = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+            self.order_number = f"NV-{uuid.uuid4().hex[:8].upper()}"
         self.total = self.subtotal + self.shipping_cost - self.discount
         super().save(*args, **kwargs)
 
@@ -119,3 +119,65 @@ class OrderStatusHistory(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class Driver(models.Model):
+    name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Chofer'
+        verbose_name_plural = 'Choferes'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class DeliveryRoute(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Borrador'),
+        ('in_progress', 'En reparto'),
+        ('completed', 'Finalizada'),
+        ('cancelled', 'Cancelada'),
+    ]
+
+    route_number = models.CharField(max_length=20, unique=True, editable=False)
+    date = models.DateField()
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='routes')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Hoja de Ruta'
+        verbose_name_plural = 'Hojas de Ruta'
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return self.route_number
+
+    def save(self, *args, **kwargs):
+        if not self.route_number:
+            import uuid
+            self.route_number = f"HR-{uuid.uuid4().hex[:6].upper()}"
+        super().save(*args, **kwargs)
+
+
+class DeliveryRouteItem(models.Model):
+    route = models.ForeignKey(DeliveryRoute, on_delete=models.CASCADE, related_name='items')
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='route_items')
+    sort_order = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Ítem de Hoja de Ruta'
+        verbose_name_plural = 'Ítems de Hoja de Ruta'
+        ordering = ['sort_order', 'id']
+        unique_together = [('route', 'order')]
+
+    def __str__(self):
+        return f"{self.route} — {self.order.order_number}"

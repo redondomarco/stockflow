@@ -1,6 +1,78 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ordersApi, paymentsApi } from '../services/api'
 import { Plus, X, ChevronRight, CreditCard, Search, Truck, Edit2 } from 'lucide-react'
+
+function CustomerCombobox({ customers, value, onChange }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selected = customers.find(c => String(c.id) === String(value))
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
+
+  const handleSelect = (c) => { onChange(String(c.id)); setSearch(''); setOpen(false) }
+  const handleClear = (e) => { e.stopPropagation(); onChange(''); setSearch('') }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div
+        className="form-input"
+        style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'text', padding: '0 10px', minHeight: 36 }}
+        onClick={() => { setOpen(true) }}
+      >
+        {open ? (
+          <input
+            autoFocus
+            style={{ border: 'none', background: 'transparent', outline: 'none', flex: 1, color: 'var(--text)', fontSize: 'inherit', fontFamily: 'inherit', padding: '6px 0' }}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar cliente..."
+          />
+        ) : (
+          <span style={{ flex: 1, padding: '6px 0', color: selected ? 'var(--text)' : 'var(--text-muted)', fontSize: 13 }}>
+            {selected ? selected.name : 'Seleccionar cliente'}
+          </span>
+        )}
+        {selected && !open && (
+          <span onClick={handleClear} style={{ cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1, display: 'flex' }}>
+            <X size={13} />
+          </span>
+        )}
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+          background: 'var(--bg-card)', border: '1px solid var(--border-light)',
+          borderRadius: 6, marginTop: 4, maxHeight: 220, overflowY: 'auto',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 13 }}>Sin resultados</div>
+          ) : filtered.map(c => (
+            <div
+              key={c.id}
+              onMouseDown={() => handleSelect(c)}
+              style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                background: String(c.id) === String(value) ? 'var(--accent-glow)' : 'transparent',
+                color: String(c.id) === String(value) ? 'var(--accent)' : 'var(--text)',
+              }}
+            >
+              {c.name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const STATUS_LABELS = {
   pending: 'Pendiente',
@@ -28,7 +100,11 @@ function fmt(n) {
   return parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+const ROUTE_STATUS_COLORS = { draft: 'var(--yellow)', in_progress: 'var(--blue)', completed: 'var(--green)', cancelled: 'var(--red)' }
+const ROUTE_STATUS_LABELS = { draft: 'Borrador', in_progress: 'En reparto', completed: 'Finalizada', cancelled: 'Cancelada' }
+
 export default function OrdersPage() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -269,6 +345,7 @@ export default function OrdersPage() {
                     <th>Total</th>
                     <th>Cobrado</th>
                     <th>Saldo</th>
+                    <th>Hoja de ruta</th>
                     <th>Fecha</th>
                     <th>Acciones</th>
                   </tr>
@@ -299,6 +376,21 @@ export default function OrdersPage() {
                           <span className="mono" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', fontWeight: balance > 0 ? 700 : 400 }}>
                             ${fmt(balance)}
                           </span>
+                        </td>
+                        <td>
+                          {o.route_info ? (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: ROUTE_STATUS_COLORS[o.route_info.route_status], padding: '2px 6px' }}
+                              onClick={() => navigate('/routes')}
+                              title={ROUTE_STATUS_LABELS[o.route_info.route_status]}
+                            >
+                              <Truck size={11} style={{ marginRight: 4 }} />
+                              {o.route_info.route_number}
+                            </button>
+                          ) : (
+                            <span className="text-muted text-xs">—</span>
+                          )}
                         </td>
                         <td><span className="text-muted text-sm mono">{new Date(o.created_at).toLocaleDateString('es-AR')}</span></td>
                         <td>
@@ -347,10 +439,7 @@ export default function OrdersPage() {
               <div className="form-grid">
                 <div className="form-group">
                   <label className="form-label">Cliente *</label>
-                  <select className="form-select" value={orderForm.customer} onChange={e => handleCustomerChange(e.target.value)}>
-                    <option value="">Seleccionar cliente</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  <CustomerCombobox customers={customers} value={orderForm.customer} onChange={handleCustomerChange} />
                   {activeMultiplier && (
                     <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                       <span style={{ background: 'var(--accent-glow)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 4, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>×{activeMultiplier.value.toFixed(4)}</span>

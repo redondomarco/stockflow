@@ -11,6 +11,8 @@ import CustomersPage from './pages/CustomersPage'
 import PriceListsPage from './pages/PriceListsPage'
 import AccountStatementPage from './pages/AccountStatementPage'
 import DebtDashboardPage from './pages/DebtDashboardPage'
+import RoutesPage from './pages/RoutesPage'
+import UsersPage from './pages/UsersPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -35,6 +37,8 @@ export default function App() {
             <Route path="price-lists" element={<PriceListsPage />} />
             <Route path="account-statement" element={<AccountStatementPage />} />
             <Route path="debt-dashboard" element={<DebtDashboardPage />} />
+            <Route path="routes" element={<RoutesPage />} />
+            <Route path="users" element={<UsersPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -104,6 +104,42 @@ export const ordersApi = {
   },
 }
 
+// Users
+export const usersApi = {
+  list: () => api.get('/users/'),
+  create: (data) => api.post('/users/', data),
+  update: (id, data) => api.patch(`/users/${id}/`, data),
+  delete: (id) => api.delete(`/users/${id}/`),
+  exportCsv: () => api.get('/users/export_csv/', { responseType: 'blob' }),
+  importCsv: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/users/import_csv/', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+}
+
+// Drivers
+export const driversApi = {
+  list: (params) => api.get('/orders/drivers/', { params }),
+  create: (data) => api.post('/orders/drivers/', data),
+  update: (id, data) => api.patch(`/orders/drivers/${id}/`, data),
+  delete: (id) => api.delete(`/orders/drivers/${id}/`),
+}
+
+// Delivery routes
+export const routesApi = {
+  list: () => api.get('/orders/routes/'),
+  get: (id) => api.get(`/orders/routes/${id}/`),
+  create: (data) => api.post('/orders/routes/', data),
+  update: (id, data) => api.patch(`/orders/routes/${id}/`, data),
+  delete: (id) => api.delete(`/orders/routes/${id}/`),
+  availableOrders: () => api.get('/orders/routes/available_orders/'),
+  changeStatus: (id, status) => api.post(`/orders/routes/${id}/change_status/`, { status }),
+  addOrders: (id, items) => api.post(`/orders/routes/${id}/add_orders/`, { items }),
+  removeItem: (id, itemId) => api.post(`/orders/routes/${id}/remove_item/`, { item_id: itemId }),
+  updateItem: (id, itemId, data) => api.post(`/orders/routes/${id}/update_item/`, { item_id: itemId, ...data }),
+}
+
 // Payments
 export const paymentsApi = {
   list: (params) => api.get('/payments/', { params }),

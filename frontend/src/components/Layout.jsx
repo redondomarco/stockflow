@@ -1,27 +1,29 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, usePermissions } from '../context/AuthContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
-  CreditCard, Users, LogOut, Tag, FileText, AlertCircle
+  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog
 } from 'lucide-react'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { section: 'Inventario' },
-  { to: '/products', icon: Package, label: 'Productos' },
-  { to: '/stock', icon: BarChart3, label: 'Movimientos' },
+  { to: '/products', icon: Package, label: 'Productos', perm: 'products' },
+  { to: '/stock', icon: BarChart3, label: 'Movimientos', perm: 'stock' },
   { section: 'Ventas' },
-  { to: '/orders', icon: ShoppingCart, label: 'Pedidos' },
-  { to: '/payments', icon: CreditCard, label: 'Pagos' },
+  { to: '/orders', icon: ShoppingCart, label: 'Pedidos', perm: 'orders' },
+  { to: '/payments', icon: CreditCard, label: 'Pagos', perm: 'payments' },
+  { to: '/routes', icon: Truck, label: 'Hojas de ruta', perm: 'routes' },
   { section: 'CRM' },
-  { to: '/customers', icon: Users, label: 'Clientes' },
-  { to: '/price-lists', icon: Tag, label: 'Listas de precios' },
-  { to: '/account-statement', icon: FileText, label: 'Cuenta corriente' },
-  { to: '/debt-dashboard', icon: AlertCircle, label: 'Deudas' },
+  { to: '/customers', icon: Users, label: 'Clientes', perm: 'customers' },
+  { to: '/price-lists', icon: Tag, label: 'Listas de precios', perm: 'price_lists' },
+  { to: '/account-statement', icon: FileText, label: 'Cuenta corriente', perm: 'customers' },
+  { to: '/debt-dashboard', icon: AlertCircle, label: 'Deudas', perm: 'customers' },
 ]
 
 export default function Layout() {
-  const { user, logout } = useAuth()
+  const { user, isAdmin, logout } = useAuth()
+  const { isHidden } = usePermissions()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -30,6 +32,18 @@ export default function Layout() {
   }
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'SF'
+
+  const visibleItems = navItems.filter(item => {
+    if (item.section || !item.perm) return true
+    return !isHidden(item.perm)
+  })
+
+  // Remove orphan section headers (section with no items following it)
+  const filtered = visibleItems.filter((item, i) => {
+    if (!item.section) return true
+    const next = visibleItems[i + 1]
+    return next && !next.section
+  })
 
   return (
     <div className="app-layout">
@@ -40,7 +54,7 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item, i) => {
+          {filtered.map((item, i) => {
             if (item.section) {
               return <div key={i} className="nav-section">{item.section}</div>
             }
@@ -56,6 +70,15 @@ export default function Layout() {
               </NavLink>
             )
           })}
+          {isAdmin && (
+            <>
+              <div className="nav-section">Sistema</div>
+              <NavLink to="/users" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <UserCog className="icon" />
+                Usuarios
+              </NavLink>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -63,7 +86,7 @@ export default function Layout() {
             <div className="user-avatar">{initials}</div>
             <div style={{ flex: 1 }}>
               <div className="user-name">{user?.username}</div>
-              <div className="user-role">Administrador</div>
+              <div className="user-role">{isAdmin ? 'Administrador' : 'Usuario'}</div>
             </div>
             <button className="btn btn-ghost" style={{ padding: '6px' }} onClick={handleLogout} title="Cerrar sesión">
               <LogOut size={15} />

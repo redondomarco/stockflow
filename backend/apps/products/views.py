@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.users.permissions import SectionPermission
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -19,21 +20,24 @@ from .serializers import (
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by("name")
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'products'
     search_fields = ['name']
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
     queryset = Supplier.objects.all().order_by("name")
     serializer_class = SupplierSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'products'
     search_fields = ['name', 'email']
 
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category', 'supplier').filter(is_active=True)
     serializer_class = ProductSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'products'
     pagination_class = None
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['category', 'supplier', 'is_active']
@@ -226,7 +230,8 @@ class ProductViewSet(viewsets.ModelViewSet):
 class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = StockMovement.objects.select_related('product').order_by('-created_at')
     serializer_class = StockMovementSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'stock'
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['product', 'movement_type']
     ordering = ['-created_at']

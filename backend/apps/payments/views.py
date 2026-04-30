@@ -2,6 +2,7 @@ from rest_framework import serializers, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.users.permissions import SectionPermission
 from django.db.models import Sum
 from .models import Payment
 
@@ -20,7 +21,8 @@ class PaymentSerializer(serializers.ModelSerializer):
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.select_related('order').order_by('-created_at')
     serializer_class = PaymentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'payments'
     filterset_fields = ['status', 'payment_method', 'order']
     ordering = ['-created_at']
 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, Driver, DeliveryRoute, DeliveryRouteItem
 
 
 class PriceListSerializer(serializers.ModelSerializer):
@@ -69,6 +69,7 @@ class OrderSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
+    route_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -78,6 +79,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'subtotal', 'shipping_cost', 'discount', 'total',
             'amount_paid', 'balance',
             'items', 'status_history', 'payment_status',
+            'route_info',
             'created_by', 'created_at', 'updated_at'
         ]
         read_only_fields = ['order_number', 'subtotal', 'total', 'created_by']
@@ -89,6 +91,16 @@ class OrderSerializer(serializers.ModelSerializer):
         amount_paid = sum(p.amount for p in obj.payments.all() if p.status == 'approved')
         return float(obj.total - amount_paid)
 
+    def get_route_info(self, obj):
+        item = obj.route_items.select_related('route').first()
+        if not item:
+            return None
+        return {
+            'route_id': item.route.id,
+            'route_number': item.route.route_number,
+            'route_status': item.route.status,
+        }
+
     def get_payment_status(self, obj):
         payments = list(obj.payments.all())
         if not payments:
@@ -99,6 +111,105 @@ class OrderSerializer(serializers.ModelSerializer):
             'amount_paid': float(amount_paid),
             'has_pending': any(p.status == 'pending' for p in payments),
         }
+
+
+class DriverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Driver
+        fields = '__all__'
+
+
+class DeliveryRouteItemSerializer(serializers.ModelSerializer):
+    order_number = serializers.CharField(source='order.order_number', read_only=True)
+    customer_name = serializers.CharField(source='order.customer.name', read_only=True)
+    customer_phone = serializers.CharField(source='order.customer.phone', read_only=True)
+    customer_address = serializers.CharField(source='order.customer.address', read_only=True)
+    shipping_address = serializers.CharField(source='order.shipping_address', read_only=True)
+    order_total = serializers.DecimalField(source='order.total', max_digits=12, decimal_places=2, read_only=True)
+    order_status = serializers.CharField(source='order.status', read_only=True)
+    order_items = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeliveryRouteItem
+        fields = [
+            'id', 'route', 'order', 'order_number', 'customer_name', 'customer_phone',
+            'customer_address', 'shipping_address', 'order_total', 'order_status',
+            'sort_order', 'notes', 'order_items',
+        ]
+
+    def get_order_items(self, obj):
+        return [
+            {
+                'product_name': it.product.name,
+                'product_sku': it.product.sku,
+                'quantity': it.quantity,
+                'delivered_quantity': it.delivered_quantity,
+            }
+            for it in obj.order.items.select_related('product').all()
+        ]
+
+
+class DeliveryRouteSerializer(serializers.ModelSerializer):
+    items = DeliveryRouteItemSerializer(many=True, read_only=True)
+    items_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    driver_name = serializers.CharField(source='driver.name', read_only=True)
+
+    class Meta:
+        model = DeliveryRoute
+        fields = ['id', 'route_number', 'date', 'driver', 'driver_name', 'status', 'status_display',
+                  'notes', 'items', 'items_count', 'created_at', 'updated_at']
+        read_only_fields = ['route_number']
+
+    def get_items_count(self, obj):
+        return obj.items.count()
+
+
+class DeliveryRouteItemInputSerializer(serializers.Serializer):
+    order = serializers.PrimaryKeyRelatedField(queryset=Order.objects.all())
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+class DeliveryRouteWriteSerializer(serializers.ModelSerializer):
+    items = DeliveryRouteItemInputSerializer(many=True, required=False, write_only=True)
+
+    class Meta:
+        model = DeliveryRoute
+        fields = ['date', 'driver', 'notes', 'items']
+
+    def validate(self, data):
+        items_data = data.get('items', [])
+        if not items_data:
+            return data
+        order_ids = [item['order'].id for item in items_data]
+        if len(order_ids) != len(set(order_ids)):
+            raise serializers.ValidationError('Hay pedidos duplicados en la lista.')
+        for item in items_data:
+            order = item['order']
+            if order.status not in ('pending', 'partial'):
+                raise serializers.ValidationError(
+                    f'El pedido {order.order_number} no está pendiente ni parcial.')
+        conflicts = DeliveryRouteItem.objects.filter(
+            order_id__in=order_ids,
+            route__status__in=['draft', 'in_progress'],
+        )
+        if conflicts.exists():
+            nums = ', '.join(c.order.order_number for c in conflicts)
+            raise serializers.ValidationError(
+                f'Los pedidos {nums} ya están en otra hoja de ruta activa.')
+        return data
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items', [])
+        route = DeliveryRoute.objects.create(**validated_data)
+        for idx, item_data in enumerate(items_data):
+            DeliveryRouteItem.objects.create(
+                route=route,
+                order=item_data['order'],
+                notes=item_data.get('notes', ''),
+                sort_order=idx,
+            )
+        return route
 
 
 class CreateOrderSerializer(serializers.Serializer):

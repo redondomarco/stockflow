@@ -24,8 +24,10 @@ class Customer(models.Model):
     email = models.EmailField(blank=True, null=True, unique=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
+    localidad = models.CharField(max_length=100, blank=True)
     price_list = models.ForeignKey(PriceList, on_delete=models.SET_NULL, null=True, blank=True, related_name='customers')
     enabled_products = models.ManyToManyField(Product, blank=True, related_name='enabled_for_customers')
+    priority = models.PositiveSmallIntegerField(default=5, help_text='Prioridad de entrega del 1 (más urgente) al 10')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -121,21 +123,6 @@ class OrderStatusHistory(models.Model):
         ordering = ['-created_at']
 
 
-class Driver(models.Model):
-    name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20, blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = 'Chofer'
-        verbose_name_plural = 'Choferes'
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
 class DeliveryRoute(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Borrador'),
@@ -146,7 +133,7 @@ class DeliveryRoute(models.Model):
 
     route_number = models.CharField(max_length=20, unique=True, editable=False)
     date = models.DateField()
-    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='routes')
+    driver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='driven_routes')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -10,11 +10,12 @@ from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, Driver, DeliveryRoute, DeliveryRouteItem
+from django.contrib.auth.models import User
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem
 from .serializers import (
     PriceListSerializer, CustomerSerializer, OrderSerializer,
     OrderItemSerializer, OrderStatusHistorySerializer,
-    DriverSerializer, DeliveryRouteSerializer, DeliveryRouteWriteSerializer,
+    DeliveryRouteSerializer, DeliveryRouteWriteSerializer,
     DeliveryRouteItemInputSerializer,
 )
 from apps.products.models import Product, StockMovement
@@ -225,14 +226,18 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
-        customers = Customer.objects.all().order_by('name')
+        customers = Customer.objects.select_related('price_list').all().order_by('name')
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = 'attachment; filename="clientes.csv"'
         response.write('﻿')
         writer = csv.writer(response)
-        writer.writerow(['nombre', 'email', 'telefono', 'direccion'])
+        writer.writerow(['nombre', 'email', 'telefono', 'direccion', 'localidad', 'prioridad', 'lista_de_precios'])
         for c in customers:
-            writer.writerow([c.name, c.email, c.phone, c.address])
+            writer.writerow([
+                c.name, c.email, c.phone, c.address, c.localidad,
+                c.priority,
+                c.price_list.name if c.price_list else '',
+            ])
         return response
 
     @action(detail=False, methods=['post'])
@@ -256,6 +261,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
             email = (row.get('email') or '').strip() or None
             phone = (row.get('telefono') or '').strip()
             address = (row.get('direccion') or '').strip()
+            localidad = (row.get('localidad') or '').strip()
 
             if not name:
                 errors.append(f'Fila {i}: nombre es requerido')
@@ -265,7 +271,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 skipped += 1
                 continue
 
-            Customer.objects.create(name=name, email=email, phone=phone, address=address)
+            Customer.objects.create(name=name, email=email, phone=phone, address=address, localidad=localidad)
             created += 1
 
         return Response({'created': created, 'skipped': skipped, 'errors': errors})
@@ -550,18 +556,6 @@ VALID_ROUTE_TRANSITIONS = {
 }
 
 
-class DriverViewSet(viewsets.ModelViewSet):
-    serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated, SectionPermission]
-    permission_section = 'routes'
-    pagination_class = None
-
-    def get_queryset(self):
-        qs = Driver.objects.all()
-        if self.request.query_params.get('active'):
-            return qs.filter(is_active=True)
-        return qs
-
 
 class DeliveryRouteViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, SectionPermission]
@@ -593,7 +587,7 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         ).values_list('order_id', flat=True)
         orders = Order.objects.filter(
             status__in=['pending', 'partial']
-        ).exclude(id__in=active_order_ids).select_related('customer').prefetch_related('items')
+        ).exclude(id__in=active_order_ids).select_related('customer').prefetch_related('items').order_by('customer__priority', 'customer__name')
         from .serializers import OrderSerializer as OS
         return Response(OS(orders, many=True).data)
 

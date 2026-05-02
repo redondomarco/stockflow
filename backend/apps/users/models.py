@@ -11,6 +11,7 @@ def default_permissions():
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     permissions = models.JSONField(default=default_permissions)
+    is_driver = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = 'Perfil de usuario'

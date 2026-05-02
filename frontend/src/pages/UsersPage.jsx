@@ -17,7 +17,7 @@ const LEVEL_COLORS = { hidden: 'var(--red)', read: 'var(--yellow)', write: 'var(
 
 const defaultPermissions = () => Object.fromEntries(SECTIONS.map(s => [s.key, 'write']))
 
-const emptyForm = { username: '', email: '', password: '', first_name: '', last_name: '', is_active: true, permissions: defaultPermissions() }
+const emptyForm = { username: '', email: '', password: '', first_name: '', last_name: '', is_active: true, is_driver: false, permissions: defaultPermissions() }
 
 export default function UsersPage() {
   const [users, setUsers] = useState([])
@@ -53,6 +53,7 @@ export default function UsersPage() {
       first_name: u.first_name || '',
       last_name: u.last_name || '',
       is_active: u.is_active,
+      is_driver: u.is_driver || false,
       permissions: { ...defaultPermissions(), ...u.permissions },
     })
     setError('')
@@ -166,6 +167,7 @@ export default function UsersPage() {
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Rol</th>
+                    <th>Chofer</th>
                     <th>Estado</th>
                     <th>Permisos</th>
                     <th style={{ width: 80 }}></th>
@@ -189,6 +191,9 @@ export default function UsersPage() {
                         <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: u.is_superuser ? 'var(--accent)' : 'var(--text-muted)' }}>
                           {u.is_superuser ? 'Admin' : 'Usuario'}
                         </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {u.is_driver && <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>✓</span>}
                       </td>
                       <td>
                         <span style={{ fontSize: 11, color: u.is_active ? 'var(--green)' : 'var(--red)' }}>
@@ -270,11 +275,21 @@ export default function UsersPage() {
                   <input className="form-input" type="password" value={form.password} onChange={f('password')}
                     placeholder={modal === 'edit' ? 'Dejar vacío para no cambiar' : ''} />
                 </div>
-                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 22 }}>
-                  <input id="is_active_toggle" type="checkbox" checked={!!form.is_active}
-                    onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
-                    style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <label htmlFor="is_active_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>Usuario activo</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 22 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input id="is_active_toggle" type="checkbox" checked={!!form.is_active}
+                      onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <label htmlFor="is_active_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>Usuario activo</label>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input id="is_driver_toggle" type="checkbox" checked={!!form.is_driver}
+                      onChange={e => setForm(p => ({ ...p, is_driver: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <label htmlFor="is_driver_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                      Chofer <span className="text-muted" style={{ fontWeight: 400 }}>(aparece en hojas de ruta)</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 

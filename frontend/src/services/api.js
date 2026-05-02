@@ -118,14 +118,6 @@ export const usersApi = {
   },
 }
 
-// Drivers
-export const driversApi = {
-  list: (params) => api.get('/orders/drivers/', { params }),
-  create: (data) => api.post('/orders/drivers/', data),
-  update: (id, data) => api.patch(`/orders/drivers/${id}/`, data),
-  delete: (id) => api.delete(`/orders/drivers/${id}/`),
-}
-
 // Delivery routes
 export const routesApi = {
   list: () => api.get('/orders/routes/'),

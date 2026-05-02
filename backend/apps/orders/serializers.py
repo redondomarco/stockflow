@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, Driver, DeliveryRoute, DeliveryRouteItem
+from django.contrib.auth.models import User
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem
 
 
 class PriceListSerializer(serializers.ModelSerializer):
@@ -113,17 +114,12 @@ class OrderSerializer(serializers.ModelSerializer):
         }
 
 
-class DriverSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Driver
-        fields = '__all__'
-
-
 class DeliveryRouteItemSerializer(serializers.ModelSerializer):
     order_number = serializers.CharField(source='order.order_number', read_only=True)
     customer_name = serializers.CharField(source='order.customer.name', read_only=True)
     customer_phone = serializers.CharField(source='order.customer.phone', read_only=True)
     customer_address = serializers.CharField(source='order.customer.address', read_only=True)
+    customer_priority = serializers.IntegerField(source='order.customer.priority', read_only=True)
     shipping_address = serializers.CharField(source='order.shipping_address', read_only=True)
     order_total = serializers.DecimalField(source='order.total', max_digits=12, decimal_places=2, read_only=True)
     order_status = serializers.CharField(source='order.status', read_only=True)
@@ -133,7 +129,7 @@ class DeliveryRouteItemSerializer(serializers.ModelSerializer):
         model = DeliveryRouteItem
         fields = [
             'id', 'route', 'order', 'order_number', 'customer_name', 'customer_phone',
-            'customer_address', 'shipping_address', 'order_total', 'order_status',
+            'customer_address', 'customer_priority', 'shipping_address', 'order_total', 'order_status',
             'sort_order', 'notes', 'order_items',
         ]
 
@@ -153,7 +149,13 @@ class DeliveryRouteSerializer(serializers.ModelSerializer):
     items = DeliveryRouteItemSerializer(many=True, read_only=True)
     items_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    driver_name = serializers.CharField(source='driver.name', read_only=True)
+    driver_name = serializers.SerializerMethodField()
+
+    def get_driver_name(self, obj):
+        if not obj.driver:
+            return None
+        full = ' '.join(filter(None, [obj.driver.first_name, obj.driver.last_name]))
+        return full or obj.driver.username
 
     class Meta:
         model = DeliveryRoute

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { routesApi, driversApi } from '../services/api'
-import { Plus, X, Printer, Truck, Users, ChevronRight, Trash2 } from 'lucide-react'
+import { routesApi, usersApi } from '../services/api'
+import { Plus, X, Printer, Truck, ChevronRight, Trash2 } from 'lucide-react'
+
+const driverLabel = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
 
 const STATUS_LABELS = { draft: 'Borrador', in_progress: 'En reparto', completed: 'Finalizada', cancelled: 'Cancelada' }
 const STATUS_COLORS = { draft: 'var(--yellow)', in_progress: 'var(--blue)', completed: 'var(--green)', cancelled: 'var(--red)' }
@@ -99,14 +101,13 @@ function printSingleReceipt(item, date, driverName) {
 export default function RoutesPage() {
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null) // null | 'create' | 'detail' | 'drivers' | 'add-orders'
+  const [modal, setModal] = useState(null) // null | 'create' | 'detail' | 'add-orders'
   const [selected, setSelected] = useState(null)
-  const [drivers, setDrivers] = useState([])
+  const [drivers, setDrivers] = useState([]) // active users
   const [availableOrders, setAvailableOrders] = useState([])
   const [orderSelections, setOrderSelections] = useState({}) // {orderId: {checked, notes}}
   const [form, setForm] = useState({ date: '', driver: '', notes: '' })
-  const [driverForm, setDriverForm] = useState({ name: '', phone: '', is_active: true })
-  const [editingDriver, setEditingDriver] = useState(null)
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -117,7 +118,7 @@ export default function RoutesPage() {
     routesApi.list().then(r => setRoutes(r.data)).finally(() => setLoading(false))
   }
 
-  const loadDrivers = () => driversApi.list({ active: 1 }).then(r => setDrivers(r.data))
+  const loadDrivers = () => usersApi.list().then(r => setDrivers((r.data || []).filter(u => u.is_active && u.is_driver)))
 
   useEffect(() => { loadRoutes() }, [])
 
@@ -212,37 +213,6 @@ export default function RoutesPage() {
     } finally { setSaving(false) }
   }
 
-  // ── Drivers ────────────────────────────────────────────────────────────────
-
-  const openDrivers = async () => {
-    await driversApi.list().then(r => setDrivers(r.data))
-    setDriverForm({ name: '', phone: '', is_active: true })
-    setEditingDriver(null); setError('')
-    setModal('drivers')
-  }
-
-  const saveDriver = async () => {
-    setSaving(true); setError('')
-    try {
-      if (editingDriver) {
-        await driversApi.update(editingDriver.id, driverForm)
-      } else {
-        await driversApi.create(driverForm)
-      }
-      const r = await driversApi.list()
-      setDrivers(r.data)
-      setDriverForm({ name: '', phone: '', is_active: true }); setEditingDriver(null)
-    } catch (e) {
-      setError(e.response?.data?.error || JSON.stringify(e.response?.data) || 'Error')
-    } finally { setSaving(false) }
-  }
-
-  const deleteDriver = async (id) => {
-    if (!confirm('¿Eliminar este chofer?')) return
-    await driversApi.delete(id)
-    driversApi.list().then(r => setDrivers(r.data))
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -252,10 +222,7 @@ export default function RoutesPage() {
           <h1 className="page-title">Hojas de Ruta</h1>
           <p className="page-subtitle">Organización de repartos</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={openDrivers}><Users size={15} /> Choferes</button>
-          <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva hoja</button>
-        </div>
+        <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva hoja</button>
       </div>
 
       <div className="page-body">
@@ -327,7 +294,7 @@ export default function RoutesPage() {
                   <label className="form-label">Chofer</label>
                   <select className="form-select" value={form.driver} onChange={e => setForm(p => ({ ...p, driver: e.target.value }))}>
                     <option value="">Sin asignar</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {drivers.map(d => <option key={d.id} value={d.id}>{driverLabel(d)}</option>)}
                   </select>
                 </div>
               </div>
@@ -353,6 +320,7 @@ export default function RoutesPage() {
                       <thead>
                         <tr>
                           <th style={{ width: 32 }}></th>
+                          <th style={{ width: 48 }}>Prioridad</th>
                           <th>Pedido</th>
                           <th>Cliente</th>
                           <th>Dirección</th>
@@ -363,11 +331,17 @@ export default function RoutesPage() {
                         {availableOrders.map(o => {
                           const sel = orderSelections[o.id]
                           const checked = !!sel
+                          const prio = o.customer?.priority ?? 5
                           return (
                             <tr key={o.id} style={checked ? { background: 'var(--accent-glow)' } : {}}>
                               <td style={{ textAlign: 'center' }}>
                                 <input type="checkbox" checked={checked} onChange={() => toggleOrder(o.id)}
                                   style={{ width: 14, height: 14, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span className="mono" style={{ fontWeight: 700, fontSize: 13, color: prio <= 3 ? 'var(--red)' : prio <= 6 ? 'var(--yellow)' : 'var(--text-muted)' }}>
+                                  {prio}
+                                </span>
                               </td>
                               <td>
                                 <span className="mono text-accent" style={{ fontWeight: 700, fontSize: 12 }}>{o.order_number}</span>
@@ -432,7 +406,7 @@ export default function RoutesPage() {
                         } catch {}
                       }}>
                       <option value="">Sin asignar</option>
-                      {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      {drivers.map(d => <option key={d.id} value={d.id}>{driverLabel(d)}</option>)}
                     </select>
                   </div>
                   {selected.notes && <div className="text-muted text-sm">{selected.notes}</div>}
@@ -591,80 +565,6 @@ export default function RoutesPage() {
         </div>
       )}
 
-      {/* ── Drivers modal ─────────────────────────────────────────── */}
-      {modal === 'drivers' && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Choferes</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setModal(null)}><X size={16} /></button>
-            </div>
-            <div className="modal-body">
-              {error && <div className="alert alert-danger">{error}</div>}
-
-              {/* Form */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                  <label className="form-label">Nombre</label>
-                  <input className="form-input" value={driverForm.name}
-                    onChange={e => setDriverForm(p => ({ ...p, name: e.target.value }))} placeholder="Nombre del chofer" />
-                </div>
-                <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                  <label className="form-label">Teléfono</label>
-                  <input className="form-input" value={driverForm.phone}
-                    onChange={e => setDriverForm(p => ({ ...p, phone: e.target.value }))} placeholder="Opcional" />
-                </div>
-                <button className="btn btn-primary" onClick={saveDriver} disabled={saving || !driverForm.name}>
-                  {editingDriver ? 'Guardar' : 'Agregar'}
-                </button>
-                {editingDriver && (
-                  <button className="btn btn-secondary" onClick={() => { setEditingDriver(null); setDriverForm({ name: '', phone: '', is_active: true }) }}>
-                    Cancelar
-                  </button>
-                )}
-              </div>
-
-              {/* List */}
-              <table style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Teléfono</th>
-                    <th>Activo</th>
-                    <th style={{ width: 80 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drivers.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 16, fontSize: 13 }}>Sin choferes</td></tr>
-                  )}
-                  {drivers.map(d => (
-                    <tr key={d.id}>
-                      <td style={{ fontWeight: 500 }}>{d.name}</td>
-                      <td className="text-muted text-sm">{d.phone || '—'}</td>
-                      <td>
-                        <span style={{ color: d.is_active ? 'var(--green)' : 'var(--red)', fontSize: 12 }}>
-                          {d.is_active ? 'Sí' : 'No'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => { setEditingDriver(d); setDriverForm({ name: d.name, phone: d.phone, is_active: d.is_active }) }}>
-                            Editar
-                          </button>
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => deleteDriver(d.id)}>
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

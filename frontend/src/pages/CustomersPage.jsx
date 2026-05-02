@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ordersApi, priceListsApi, productsApi } from '../services/api'
 import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package } from 'lucide-react'
 
-const emptyCustomer = { name: '', email: '', phone: '', address: '', price_list: '' }
+const emptyCustomer = { name: '', email: '', phone: '', address: '', localidad: '', price_list: '', priority: 5 }
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([])
@@ -41,7 +41,7 @@ export default function CustomersPage() {
   const openCreate = () => { setForm(emptyCustomer); setError(''); setModal('create') }
   const openEdit = (c) => {
     setSelected(c)
-    setForm({ name: c.name, email: c.email ?? '', phone: c.phone, address: c.address, price_list: c.price_list ?? '' })
+    setForm({ name: c.name, email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
     setError('')
     setModal('edit')
   }
@@ -166,6 +166,8 @@ export default function CustomersPage() {
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Teléfono</th>
+                    <th>Localidad</th>
+                    <th>Prioridad</th>
                     <th>Lista de precios</th>
                     <th>Pedidos</th>
                     <th>Registrado</th>
@@ -181,6 +183,12 @@ export default function CustomersPage() {
                       <td style={{ fontWeight: 500 }}>{c.name}</td>
                       <td className="text-muted">{c.email || '–'}</td>
                       <td className="text-muted">{c.phone || '–'}</td>
+                      <td className="text-muted text-sm">{c.localidad || '–'}</td>
+                      <td>
+                        <span className="mono" style={{ fontWeight: 700, color: c.priority <= 3 ? 'var(--red)' : c.priority <= 6 ? 'var(--yellow)' : 'var(--text-muted)', fontSize: 13 }}>
+                          {c.priority}
+                        </span>
+                      </td>
                       <td>
                         {c.price_list_name ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -236,6 +244,19 @@ export default function CustomersPage() {
                 <div className="form-group">
                   <label className="form-label">Dirección</label>
                   <input className="form-input" value={form.address} onChange={f('address')} />
+                </div>
+              </div>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-label">Localidad</label>
+                  <input className="form-input" value={form.localidad} onChange={f('localidad')} />
+                </div>
+              </div>
+              <div className="form-grid">
+                <div className="form-group" style={{ maxWidth: 200 }}>
+                  <label className="form-label">Prioridad de entrega (1–10)</label>
+                  <input className="form-input mono" type="number" min="1" max="10" value={form.priority} onChange={f('priority')} />
+                  <span className="text-muted text-xs" style={{ marginTop: 4, display: 'block' }}>1 = más urgente · 10 = menor prioridad</span>
                 </div>
               </div>
               <div className="form-group">

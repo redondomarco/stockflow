@@ -38,6 +38,11 @@ function CustomerCombobox({ customers, value, onChange }) {
         ) : (
           <span style={{ flex: 1, padding: '6px 0', color: selected ? 'var(--text)' : 'var(--text-muted)', fontSize: 13 }}>
             {selected ? selected.name : 'Seleccionar cliente'}
+            {selected?.last_order_date && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                último: {new Date(selected.last_order_date + 'T12:00:00').toLocaleDateString('es-AR')}
+              </span>
+            )}
           </span>
         )}
         {selected && !open && (
@@ -65,7 +70,14 @@ function CustomerCombobox({ customers, value, onChange }) {
                 color: String(c.id) === String(value) ? 'var(--accent)' : 'var(--text)',
               }}
             >
-              {c.name}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span>{c.name}</span>
+                {c.last_order_date && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                    {new Date(c.last_order_date + 'T12:00:00').toLocaleDateString('es-AR')}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>

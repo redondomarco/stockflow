@@ -46,6 +46,15 @@ class Product(models.Model):
     fixed_price = models.BooleanField(default=False, help_text='Si está activo, el multiplicador de lista de precios no se aplica')
     image = models.ImageField(upload_to='products/', blank=True, null=True)
     sort_order = models.IntegerField(default=0, help_text='Índice de orden de visualización (menor = primero)')
+    # Producto agrupado (ej: caja = N unidades de otro producto)
+    is_bundle = models.BooleanField(default=False)
+    bundle_child = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='parent_bundles',
+        help_text='Producto unitario que compone este agrupado'
+    )
+    bundle_quantity = models.PositiveIntegerField(null=True, blank=True, help_text='Cantidad de unidades por agrupado')
+    bundle_unit_weight = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, help_text='Peso por unidad (kg)')
+    bundle_unit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Precio por unidad')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -57,6 +66,12 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.sku} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        if self.is_bundle and self.bundle_quantity and self.bundle_unit_price:
+            from decimal import Decimal
+            self.price = Decimal(str(self.bundle_quantity)) * self.bundle_unit_price
+        super().save(*args, **kwargs)
 
     @property
     def is_low_stock(self):

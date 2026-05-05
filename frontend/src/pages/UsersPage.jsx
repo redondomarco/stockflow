@@ -167,7 +167,7 @@ export default function UsersPage() {
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Rol</th>
-                    <th>Chofer</th>
+                    <th>Repartidor</th>
                     <th>Estado</th>
                     <th>Permisos</th>
                     <th style={{ width: 80 }}></th>
@@ -287,7 +287,7 @@ export default function UsersPage() {
                       onChange={e => setForm(p => ({ ...p, is_driver: e.target.checked }))}
                       style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
                     <label htmlFor="is_driver_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
-                      Chofer <span className="text-muted" style={{ fontWeight: 400 }}>(aparece en hojas de ruta)</span>
+                      Repartidor <span className="text-muted" style={{ fontWeight: 400 }}>(aparece en hojas de ruta)</span>
                     </label>
                   </div>
                 </div>

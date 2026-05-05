@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { productsApi } from '../services/api'
 import { Plus, Search, Edit2, ArrowUpDown, X, Package, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react'
 
-const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, fixed_price: false, is_active: true }
+const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, fixed_price: false, is_bundle: false, bundle_child: '', bundle_quantity: '', bundle_unit_weight: '', bundle_unit_price: '', is_active: true }
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([])
@@ -38,7 +38,7 @@ export default function ProductsPage() {
   useEffect(() => { load() }, [search, filterCat])
 
   const openCreate = () => { setForm(emptyProduct); setError(''); setModal('create') }
-  const openEdit = (p) => { setSelected(p); setForm({ ...p, category: p.category || '', supplier: p.supplier || '' }); setError(''); setModal('edit') }
+  const openEdit = (p) => { setSelected(p); setForm({ ...p, category: p.category || '', supplier: p.supplier || '', bundle_child: p.bundle_child || '', bundle_quantity: p.bundle_quantity || '', bundle_unit_weight: p.bundle_unit_weight || '', bundle_unit_price: p.bundle_unit_price || '' }); setError(''); setModal('edit') }
   const openStock = (p) => { setSelected(p); setStockForm({ quantity: 0, movement_type: 'in', reason: '' }); setModal('stock') }
 
   const saveProduct = async () => {
@@ -216,7 +216,20 @@ export default function ProductsPage() {
                           </span>
                         )}
                       </td>
-                      <td><span style={{ fontWeight: 500 }}>{p.name}</span></td>
+                      <td>
+                        <span style={{ fontWeight: 500 }}>{p.name}</span>
+                        {p.is_bundle && (
+                          <span style={{ marginLeft: 6, fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--yellow)', background: 'var(--yellow-dim)', padding: '1px 5px', borderRadius: 3, verticalAlign: 'middle' }}>
+                            GRUP
+                          </span>
+                        )}
+                        {p.is_bundle && p.bundle_child_sku && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {p.bundle_quantity} u. de <span className="mono">{p.bundle_child_sku}</span>
+                            {p.bundle_unit_weight && <span> · {p.bundle_unit_weight} kg/u</span>}
+                          </div>
+                        )}
+                      </td>
                       <td><span className="text-muted">{p.category_name || '–'}</span></td>
                       <td>
                         <span className="mono">${parseFloat(p.price).toLocaleString('es-AR')}</span>
@@ -322,6 +335,18 @@ export default function ProductsPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 22 }}>
                   <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
                     <input
+                      id="is_bundle_toggle"
+                      type="checkbox"
+                      checked={!!form.is_bundle}
+                      onChange={e => setForm(p => ({ ...p, is_bundle: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--yellow)', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="is_bundle_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                      Producto agrupado
+                    </label>
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
+                    <input
                       id="fixed_price_toggle"
                       type="checkbox"
                       checked={!!form.fixed_price}
@@ -348,6 +373,43 @@ export default function ProductsPage() {
                   )}
                 </div>
               </div>
+              {form.is_bundle && (
+                <div style={{ marginTop: 12, padding: '14px 16px', background: 'var(--bg)', border: '1px solid var(--yellow)', borderRadius: 8 }}>
+                  <div className="form-label" style={{ marginBottom: 10, color: 'var(--yellow)' }}>Configuración de agrupado</div>
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label className="form-label">Producto unitario</label>
+                      <select className="form-select" value={form.bundle_child} onChange={f('bundle_child')}>
+                        <option value="">Sin referencia</option>
+                        {products.filter(p => !p.is_bundle && p.id !== form.id).map(p => (
+                          <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Cantidad de unidades</label>
+                      <input className="form-input mono" type="number" min="1" value={form.bundle_quantity} onChange={f('bundle_quantity')} placeholder="0" />
+                    </div>
+                  </div>
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label className="form-label">Precio unitario</label>
+                      <input className="form-input mono" type="number" step="0.01" value={form.bundle_unit_price} onChange={f('bundle_unit_price')} placeholder="0.00" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Peso unitario (kg)</label>
+                      <input className="form-input mono" type="number" step="0.001" value={form.bundle_unit_weight} onChange={f('bundle_unit_weight')} placeholder="0.000" />
+                    </div>
+                  </div>
+                  {form.bundle_quantity && form.bundle_unit_price && (
+                    <div style={{ fontSize: 13, color: 'var(--yellow)', marginTop: 4 }}>
+                      Precio total calculado: <strong className="mono">
+                        ${(parseFloat(form.bundle_quantity || 0) * parseFloat(form.bundle_unit_price || 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>

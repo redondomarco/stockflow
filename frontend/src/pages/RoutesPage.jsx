@@ -47,7 +47,7 @@ function receiptBlock(item, date, driverName) {
     <div class="row"><span class="label">Cliente:</span> ${item.customer_name}</div>
     ${addr ? `<div class="row"><span class="label">Dirección:</span> ${addr}</div>` : ''}
     ${item.customer_phone ? `<div class="row"><span class="label">Tel:</span> ${item.customer_phone}</div>` : ''}
-    ${driverName ? `<div class="row"><span class="label">Chofer:</span> ${driverName}</div>` : ''}
+    ${driverName ? `<div class="row"><span class="label">Repartidor:</span> ${driverName}</div>` : ''}
     <table style="margin-top:10px"><thead><tr><th>SKU</th><th>Producto</th><th>Cant.</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div style="text-align:right;margin-top:10px;font-weight:bold">Total: <span class="mono">$${fmt(item.order_total)}</span></div>
@@ -72,7 +72,7 @@ function printRouteSheet(route) {
   }).join('')
   const body = `
     <h1>Hoja de Ruta — ${route.route_number}</h1>
-    <div class="meta">Fecha: ${fmtDate(route.date)} | Chofer: ${route.driver_name || '—'} | Estado: ${STATUS_LABELS[route.status]} | ${route.items.length} pedidos</div>
+    <div class="meta">Fecha: ${fmtDate(route.date)} | Repartidor: ${route.driver_name || '—'} | Estado: ${STATUS_LABELS[route.status]} | ${route.items.length} pedidos</div>
     ${route.notes ? `<div class="meta">Notas: ${route.notes}</div>` : ''}
     <table><thead><tr><th>#</th><th>Pedido</th><th>Cliente</th><th>Dirección</th><th>Productos</th><th>Total</th><th>Notas</th></tr></thead>
     <tbody>${rows}</tbody></table>`
@@ -291,7 +291,7 @@ export default function RoutesPage() {
                   <input className="form-input" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Chofer</label>
+                  <label className="form-label">Repartidor</label>
                   <select className="form-select" value={form.driver} onChange={e => setForm(p => ({ ...p, driver: e.target.value }))}>
                     <option value="">Sin asignar</option>
                     {drivers.map(d => <option key={d.id} value={d.id}>{driverLabel(d)}</option>)}
@@ -396,7 +396,7 @@ export default function RoutesPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div className="text-muted text-sm">Fecha: <strong style={{ color: 'var(--text)' }}>{fmtDate(selected.date)}</strong></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className="text-muted text-sm">Chofer:</span>
+                    <span className="text-muted text-sm">Repartidor:</span>
                     <select className="form-select" style={{ fontSize: 12, padding: '3px 8px', width: 'auto' }}
                       value={selected.driver || ''}
                       onChange={async e => {

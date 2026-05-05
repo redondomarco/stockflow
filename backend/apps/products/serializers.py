@@ -22,6 +22,8 @@ class SupplierSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    bundle_child_name = serializers.CharField(source='bundle_child.name', read_only=True)
+    bundle_child_sku = serializers.CharField(source='bundle_child.sku', read_only=True)
     is_low_stock = serializers.ReadOnlyField()
     margin = serializers.ReadOnlyField()
 
@@ -30,7 +32,10 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'sku', 'description', 'category', 'category_name',
             'supplier', 'supplier_name', 'price', 'cost', 'stock', 'stock_min',
-            'fixed_price', 'image', 'sort_order', 'is_active', 'is_low_stock', 'margin', 'created_at', 'updated_at'
+            'fixed_price', 'image', 'sort_order',
+            'is_bundle', 'bundle_child', 'bundle_child_name', 'bundle_child_sku',
+            'bundle_quantity', 'bundle_unit_weight', 'bundle_unit_price',
+            'is_active', 'is_low_stock', 'margin', 'created_at', 'updated_at'
         ]
 
 

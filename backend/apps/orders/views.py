@@ -124,6 +124,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'customers'
+    pagination_class = None
     search_fields = ['name', 'email', 'phone']
     ordering = ['name']
 
@@ -131,7 +132,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def products(self, request, pk=None):
         customer = self.get_object()
         if request.method == 'GET':
-            prods = customer.enabled_products.filter(is_active=True).order_by('sku')
+            prods = customer.enabled_products.filter(is_active=True).order_by('sort_order', 'name')
             return Response(ProductSerializer(prods, many=True).data)
         product_ids = request.data.get('product_ids', [])
         customer.enabled_products.set(product_ids)
@@ -231,10 +232,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="clientes.csv"'
         response.write('﻿')
         writer = csv.writer(response)
-        writer.writerow(['nombre', 'email', 'telefono', 'direccion', 'localidad', 'prioridad', 'lista_de_precios'])
+        writer.writerow(['nombre', 'cuit', 'email', 'telefono', 'direccion', 'localidad', 'prioridad', 'lista_de_precios'])
         for c in customers:
             writer.writerow([
-                c.name, c.email, c.phone, c.address, c.localidad,
+                c.name, c.cuit or '', c.email, c.phone, c.address, c.localidad,
                 c.priority,
                 c.price_list.name if c.price_list else '',
             ])
@@ -258,6 +259,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
         for i, row in enumerate(reader, start=2):
             name = (row.get('nombre') or '').strip()
+            cuit = (row.get('cuit') or '').strip() or None
             email = (row.get('email') or '').strip() or None
             phone = (row.get('telefono') or '').strip()
             address = (row.get('direccion') or '').strip()
@@ -267,11 +269,15 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 errors.append(f'Fila {i}: nombre es requerido')
                 continue
 
+            if cuit and Customer.objects.filter(cuit=cuit).exists():
+                skipped += 1
+                continue
+
             if email and Customer.objects.filter(email=email).exists():
                 skipped += 1
                 continue
 
-            Customer.objects.create(name=name, email=email, phone=phone, address=address, localidad=localidad)
+            Customer.objects.create(name=name, cuit=cuit, email=email, phone=phone, address=address, localidad=localidad)
             created += 1
 
         return Response({'created': created, 'skipped': skipped, 'errors': errors})

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 class PriceList(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    multiplier = models.DecimalField(max_digits=6, decimal_places=4, default=1.0000)
+    multiplier = models.DecimalField(max_digits=10, decimal_places=4, default=1.0000)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -21,6 +21,7 @@ class PriceList(models.Model):
 
 class Customer(models.Model):
     name = models.CharField(max_length=200)
+    cuit = models.CharField(max_length=20, blank=True, null=True, unique=True)
     email = models.EmailField(blank=True, null=True, unique=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
@@ -34,6 +35,24 @@ class Customer(models.Model):
         verbose_name = 'Cliente'
         verbose_name_plural = 'Clientes'
         ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.cuit:
+            self.cuit = self._next_auto_cuit()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _next_auto_cuit(cls):
+        import re
+        existing = cls.objects.filter(
+            cuit__startswith='00-', cuit__endswith='-0'
+        ).values_list('cuit', flat=True)
+        max_num = 0
+        for cuit in existing:
+            m = re.match(r'^00-(\d+)-0$', cuit)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+        return f"00-{max_num + 1:08d}-0"
 
     def __str__(self):
         return f"{self.name} ({self.email})"
@@ -70,10 +89,21 @@ class Order(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.order_number:
-            import uuid
-            self.order_number = f"NV-{uuid.uuid4().hex[:8].upper()}"
+            self.order_number = self._next_order_number()
         self.total = self.subtotal + self.shipping_cost - self.discount
         super().save(*args, **kwargs)
+
+    @classmethod
+    def _next_order_number(cls):
+        import re
+        nums = cls.objects.filter(
+            order_number__regex=r'^NV-\d+$'
+        ).values_list('order_number', flat=True)
+        max_num = max(
+            (int(re.match(r'^NV-(\d+)$', n).group(1)) for n in nums),
+            default=0
+        )
+        return f"NV-{max_num + 1:08d}"
 
     @property
     def amount_paid(self):

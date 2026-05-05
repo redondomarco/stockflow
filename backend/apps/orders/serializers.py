@@ -16,6 +16,7 @@ class PriceListSerializer(serializers.ModelSerializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     order_count = serializers.SerializerMethodField()
+    last_order_date = serializers.SerializerMethodField()
     price_list_name = serializers.CharField(source='price_list.name', read_only=True)
     price_list_multiplier = serializers.SerializerMethodField()
 
@@ -24,13 +25,27 @@ class CustomerSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # El UniqueValidator auto-generado no maneja NULL correctamente;
         # la unicidad real se controla en validate_email.
-        extra_kwargs = {'email': {'validators': []}}
+        extra_kwargs = {'email': {'validators': []}, 'cuit': {'validators': []}}
 
     def get_order_count(self, obj):
         return obj.orders.count()
 
+    def get_last_order_date(self, obj):
+        last = obj.orders.exclude(status='cancelled').order_by('-created_at').values('created_at').first()
+        return last['created_at'].date().isoformat() if last else None
+
     def get_price_list_multiplier(self, obj):
         return float(obj.price_list.multiplier) if obj.price_list else None
+
+    def validate_cuit(self, value):
+        if not value:
+            return None
+        qs = Customer.objects.filter(cuit=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Ya existe un cliente con este CUIT.")
+        return value
 
     def validate_email(self, value):
         if not value:

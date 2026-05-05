@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ordersApi, priceListsApi, productsApi } from '../services/api'
 import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package } from 'lucide-react'
 
-const emptyCustomer = { name: '', email: '', phone: '', address: '', localidad: '', price_list: '', priority: 5 }
+const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', price_list: '', priority: 5 }
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([])
@@ -41,7 +41,7 @@ export default function CustomersPage() {
   const openCreate = () => { setForm(emptyCustomer); setError(''); setModal('create') }
   const openEdit = (c) => {
     setSelected(c)
-    setForm({ name: c.name, email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
+    setForm({ name: c.name, cuit: c.cuit ?? '', email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
     setError('')
     setModal('edit')
   }
@@ -164,6 +164,7 @@ export default function CustomersPage() {
                 <thead>
                   <tr>
                     <th>Nombre</th>
+                    <th>CUIT</th>
                     <th>Email</th>
                     <th>Teléfono</th>
                     <th>Localidad</th>
@@ -181,6 +182,7 @@ export default function CustomersPage() {
                   {customers.map(c => (
                     <tr key={c.id}>
                       <td style={{ fontWeight: 500 }}>{c.name}</td>
+                      <td><span className="mono text-sm">{c.cuit || '–'}</span></td>
                       <td className="text-muted">{c.email || '–'}</td>
                       <td className="text-muted">{c.phone || '–'}</td>
                       <td className="text-muted text-sm">{c.localidad || '–'}</td>
@@ -230,6 +232,10 @@ export default function CustomersPage() {
                 <div className="form-group">
                   <label className="form-label">Nombre *</label>
                   <input className="form-input" value={form.name} onChange={f('name')} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">CUIT</label>
+                  <input className="form-input mono" value={form.cuit} onChange={f('cuit')} placeholder="20-12345678-9" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Email</label>

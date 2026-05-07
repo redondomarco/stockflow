@@ -179,9 +179,20 @@ class DeliveryRoute(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.route_number:
-            import uuid
-            self.route_number = f"HR-{uuid.uuid4().hex[:6].upper()}"
+            self.route_number = self._next_route_number()
         super().save(*args, **kwargs)
+
+    @classmethod
+    def _next_route_number(cls):
+        import re
+        nums = cls.objects.filter(
+            route_number__regex=r'^HR-\d+$'
+        ).values_list('route_number', flat=True)
+        max_num = max(
+            (int(re.match(r'^HR-(\d+)$', n).group(1)) for n in nums),
+            default=0
+        )
+        return f"HR-{max_num + 1:08d}"
 
 
 class DeliveryRouteItem(models.Model):

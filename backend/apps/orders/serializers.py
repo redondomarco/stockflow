@@ -149,15 +149,22 @@ class DeliveryRouteItemSerializer(serializers.ModelSerializer):
         ]
 
     def get_order_items(self, obj):
-        return [
-            {
-                'product_name': it.product.name,
-                'product_sku': it.product.sku,
+        items = []
+        for it in obj.order.items.select_related('product__bundle_child').order_by('product__sort_order', 'product__name'):
+            p = it.product
+            items.append({
+                'product_name': p.name,
+                'product_sku': p.sku,
                 'quantity': it.quantity,
                 'delivered_quantity': it.delivered_quantity,
-            }
-            for it in obj.order.items.select_related('product').all()
-        ]
+                'unit_price': float(it.unit_price),
+                'subtotal': float(it.subtotal),
+                'is_bundle': p.is_bundle,
+                'bundle_unit_weight': float(p.bundle_unit_weight) if p.bundle_unit_weight else None,
+                'bundle_unit_price': float(p.bundle_unit_price) if p.bundle_unit_price else None,
+                'bundle_quantity': p.bundle_quantity,
+            })
+        return items
 
 
 class DeliveryRouteSerializer(serializers.ModelSerializer):

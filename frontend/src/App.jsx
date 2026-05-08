@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ConfigProvider } from './context/ConfigContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -13,6 +14,7 @@ import AccountStatementPage from './pages/AccountStatementPage'
 import DebtDashboardPage from './pages/DebtDashboardPage'
 import RoutesPage from './pages/RoutesPage'
 import UsersPage from './pages/UsersPage'
+import SettingsPage from './pages/SettingsPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -23,25 +25,28 @@ function PrivateRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-            <Route index element={<Navigate to="/dashboard" />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="products" element={<ProductsPage />} />
-            <Route path="stock" element={<StockPage />} />
-            <Route path="orders" element={<OrdersPage />} />
-            <Route path="payments" element={<PaymentsPage />} />
-            <Route path="customers" element={<CustomersPage />} />
-            <Route path="price-lists" element={<PriceListsPage />} />
-            <Route path="account-statement" element={<AccountStatementPage />} />
-            <Route path="debt-dashboard" element={<DebtDashboardPage />} />
-            <Route path="routes" element={<RoutesPage />} />
-            <Route path="users" element={<UsersPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <ConfigProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+              <Route index element={<Navigate to="/dashboard" />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="stock" element={<StockPage />} />
+              <Route path="orders" element={<OrdersPage />} />
+              <Route path="payments" element={<PaymentsPage />} />
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="price-lists" element={<PriceListsPage />} />
+              <Route path="account-statement" element={<AccountStatementPage />} />
+              <Route path="debt-dashboard" element={<DebtDashboardPage />} />
+              <Route path="routes" element={<RoutesPage />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ConfigProvider>
     </AuthProvider>
   )
 }

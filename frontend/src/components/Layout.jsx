@@ -1,8 +1,9 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth, usePermissions } from '../context/AuthContext'
+import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
-  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog
+  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings
 } from 'lucide-react'
 
 const navItems = [
@@ -24,12 +25,10 @@ const navItems = [
 export default function Layout() {
   const { user, isAdmin, logout } = useAuth()
   const { isHidden } = usePermissions()
+  const { logoSvg } = useConfig()
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
+  const handleLogout = () => { logout(); navigate('/login') }
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'SF'
 
@@ -38,7 +37,6 @@ export default function Layout() {
     return !isHidden(item.perm)
   })
 
-  // Remove orphan section headers (section with no items following it)
   const filtered = visibleItems.filter((item, i) => {
     if (!item.section) return true
     const next = visibleItems[i + 1]
@@ -49,22 +47,25 @@ export default function Layout() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-text">StockFlow</div>
-          <div className="logo-sub">Sistema de gestión</div>
+          {logoSvg ? (
+            <div
+              dangerouslySetInnerHTML={{ __html: logoSvg }}
+              style={{ maxWidth: 140, maxHeight: 48, display: 'flex', alignItems: 'center' }}
+            />
+          ) : (
+            <>
+              <div className="logo-text">StockFlow</div>
+              <div className="logo-sub">Sistema de gestión</div>
+            </>
+          )}
         </div>
 
         <nav className="sidebar-nav">
           {filtered.map((item, i) => {
-            if (item.section) {
-              return <div key={i} className="nav-section">{item.section}</div>
-            }
+            if (item.section) return <div key={i} className="nav-section">{item.section}</div>
             const Icon = item.icon
             return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-              >
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <Icon className="icon" />
                 {item.label}
               </NavLink>
@@ -74,8 +75,10 @@ export default function Layout() {
             <>
               <div className="nav-section">Sistema</div>
               <NavLink to="/users" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-                <UserCog className="icon" />
-                Usuarios
+                <UserCog className="icon" /> Usuarios
+              </NavLink>
+              <NavLink to="/settings" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <Settings className="icon" /> Configuración
               </NavLink>
             </>
           )}

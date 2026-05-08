@@ -3,6 +3,7 @@ import { routesApi, usersApi } from '../services/api'
 import { Plus, X, FileDown, Truck, ChevronRight, Trash2 } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { useConfig, svgToPngDataUrl } from '../context/ConfigContext'
 
 const driverLabel = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
 
@@ -21,18 +22,25 @@ function fmtDate(d) {
 
 // ── PDF helpers ────────────────────────────────────────────────────────────────
 
-function downloadRouteSheet(route) {
+async function downloadRouteSheet(route, logoPng) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+
+  let headerY = 16
+  if (logoPng) {
+    doc.addImage(logoPng, 'PNG', 14, 6, 40, 20)
+    headerY = 32
+  }
 
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.text(`Hoja de Ruta - ${route.route_number}`, 14, 16)
+  doc.text(`Hoja de Ruta - ${route.route_number}`, logoPng ? 60 : 14, 16)
 
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   const meta = `Fecha: ${fmtDate(route.date)}   Repartidor: ${route.driver_name || '-'}   Estado: ${STATUS_LABELS[route.status]}   Pedidos: ${route.items.length}`
-  doc.text(meta, 14, 23)
-  if (route.notes) doc.text(`Notas: ${route.notes}`, 14, 29)
+  const metaX = logoPng ? 60 : 14
+  doc.text(meta, metaX, 23)
+  if (route.notes) doc.text(`Notas: ${route.notes}`, metaX, 29)
 
   autoTable(doc, {
     startY: route.notes ? 33 : 28,
@@ -64,9 +72,14 @@ function downloadRouteSheet(route) {
   doc.save(`hoja-ruta-${route.route_number}.pdf`)
 }
 
-function addReceiptPage(doc, item, date, driverName) {
+function addReceiptPage(doc, item, date, driverName, logoPng) {
   const m = 20
   let y = 22
+
+  if (logoPng) {
+    doc.addImage(logoPng, 'PNG', m, 8, 35, 18)
+    y = 32
+  }
 
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
@@ -148,24 +161,25 @@ function addReceiptPage(doc, item, date, driverName) {
   doc.text('Firma', m, sigY + 5)
 }
 
-function downloadAllReceipts(route) {
+async function downloadAllReceipts(route, logoPng) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   route.items.forEach((item, i) => {
     if (i > 0) doc.addPage()
-    addReceiptPage(doc, item, route.date, route.driver_name)
+    addReceiptPage(doc, item, route.date, route.driver_name, logoPng)
   })
   doc.save(`comprobantes-${route.route_number}.pdf`)
 }
 
-function downloadSingleReceipt(item, date, driverName, routeNumber) {
+async function downloadSingleReceipt(item, date, driverName, routeNumber, logoPng) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  addReceiptPage(doc, item, date, driverName)
+  addReceiptPage(doc, item, date, driverName, logoPng)
   doc.save(`comprobante-${item.order_number}.pdf`)
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function RoutesPage() {
+  const { logoSvg } = useConfig()
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | 'create' | 'detail' | 'add-orders'
@@ -481,10 +495,10 @@ export default function RoutesPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {selected.items?.length > 0 && (
                     <>
-                      <button className="btn btn-secondary btn-sm" onClick={() => downloadRouteSheet(selected)}>
+                      <button className="btn btn-secondary btn-sm" onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadRouteSheet(selected, p) }}>
                         <FileDown size={13} /> Hoja PDF
                       </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => downloadAllReceipts(selected)}>
+                      <button className="btn btn-secondary btn-sm" onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadAllReceipts(selected, p) }}>
                         <FileDown size={13} /> Comprobantes PDF
                       </button>
                     </>
@@ -557,7 +571,7 @@ export default function RoutesPage() {
                           <td>
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="btn btn-ghost btn-sm" title="Descargar comprobante PDF"
-                                onClick={() => downloadSingleReceipt(item, selected.date, selected.driver_name, selected.route_number)}>
+                                onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadSingleReceipt(item, selected.date, selected.driver_name, selected.route_number, p) }}>
                                 <FileDown size={12} />
                               </button>
                               {selected.status === 'draft' && (

@@ -8,6 +8,18 @@ def default_permissions():
     return {s: 'write' for s in SECTIONS}
 
 
+class SystemConfig(models.Model):
+    logo_svg = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Configuración del sistema'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     permissions = models.JSONField(default=default_permissions)

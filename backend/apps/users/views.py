@@ -6,8 +6,9 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.views import APIView
 from django.contrib.auth.models import User
-from .models import UserProfile, default_permissions
+from .models import UserProfile, SystemConfig, default_permissions
 from .serializers import UserSerializer
 
 SECTIONS = ['products', 'stock', 'orders', 'payments', 'customers', 'price_lists', 'routes']
@@ -138,3 +139,20 @@ class UserViewSet(viewsets.ModelViewSet):
                 created.append(entry)
 
         return Response({'created': created, 'updated': updated, 'errors': errors})
+
+
+class SystemConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        config = SystemConfig.get()
+        return Response({'logo_svg': config.logo_svg})
+
+    def patch(self, request):
+        if not request.user.is_superuser:
+            return Response({'error': 'No autorizado.'}, status=403)
+        config = SystemConfig.get()
+        if 'logo_svg' in request.data:
+            config.logo_svg = request.data['logo_svg']
+            config.save()
+        return Response({'logo_svg': config.logo_svg})

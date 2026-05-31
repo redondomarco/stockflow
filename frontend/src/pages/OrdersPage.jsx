@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ordersApi, paymentsApi } from '../services/api'
+import { ordersApi, paymentsApi, productsApi } from '../services/api'
 import { Plus, X, ChevronRight, CreditCard, Search, Truck, Edit2 } from 'lucide-react'
 
 function CustomerCombobox({ customers, value, onChange }) {
@@ -137,6 +137,10 @@ export default function OrdersPage() {
   const [paymentForm, setPaymentForm] = useState({ payment_method: 'transfer', amount: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerProducts, setPickerProducts] = useState([])
+  const [pickerSelected, setPickerSelected] = useState(new Set())
+  const [pickerSaving, setPickerSaving] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -321,6 +325,32 @@ export default function OrdersPage() {
   // ── Detail ────────────────────────────────────────────────────────
   const openDetail = (o) => { setSelected(o); setModal('detail') }
 
+  // ── Product picker (habilitar productos al cliente desde el pedido) ──
+  const openPicker = async () => {
+    const [allRes] = await Promise.all([productsApi.list()])
+    const all = allRes.data || []
+    setPickerProducts(all.filter(p => p.is_active))
+    setPickerSelected(new Set(customerProducts.map(p => p.id)))
+    setPickerOpen(true)
+  }
+
+  const savePicker = async () => {
+    setPickerSaving(true)
+    try {
+      await ordersApi.setCustomerProducts(orderForm.customer, [...pickerSelected])
+      setPickerOpen(false)
+      // Reload customer products
+      const res = await ordersApi.getCustomerProducts(orderForm.customer)
+      setCustomerProducts((res.data || []).map(p => ({ ...p, qty: 0 })))
+    } finally { setPickerSaving(false) }
+  }
+
+  const togglePicker = (id) => setPickerSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
   return (
     <>
       <div className="page-header">
@@ -472,7 +502,12 @@ export default function OrdersPage() {
                 ) : loadingProducts ? (
                   <div className="loading" style={{ minHeight: 60 }}><div className="spinner" /></div>
                 ) : customerProducts.length === 0 ? (
-                  <div style={{ padding: '12px 0', color: 'var(--text-muted)', fontSize: 13 }}>Este cliente no tiene productos habilitados.</div>
+                  <div style={{ padding: '12px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Este cliente no tiene productos habilitados.</span>
+                    <button className="btn btn-secondary btn-sm" onClick={openPicker}>
+                      <Plus size={13} /> Habilitar productos
+                    </button>
+                  </div>
                 ) : (
                   <div className="table-wrapper">
                     <table>
@@ -849,6 +884,52 @@ export default function OrdersPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={createPayment} disabled={saving}>{saving ? '...' : 'Registrar pago'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Product picker modal ──────────────────────────────── */}
+      {pickerOpen && (
+        <div className="modal-overlay" onClick={() => setPickerOpen(false)}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '88vh' }}>
+            <div className="modal-header">
+              <span className="modal-title">Habilitar productos para el cliente</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPickerOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36 }}></th>
+                      <th>SKU</th>
+                      <th>Nombre</th>
+                      <th>Categoría</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickerProducts.map(p => (
+                      <tr key={p.id} style={pickerSelected.has(p.id) ? { background: 'var(--accent-glow)' } : {}}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input type="checkbox" checked={pickerSelected.has(p.id)} onChange={() => togglePicker(p.id)}
+                            style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                        </td>
+                        <td><span className="mono text-sm">{p.sku}</span></td>
+                        <td style={{ fontWeight: 500 }}>{p.name}</td>
+                        <td className="text-muted text-sm">{p.category_name || '–'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <span className="text-muted text-sm">{pickerSelected.size} seleccionado{pickerSelected.size !== 1 ? 's' : ''}</span>
+              <button className="btn btn-secondary" onClick={() => setPickerOpen(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={savePicker} disabled={pickerSaving}>
+                {pickerSaving ? 'Guardando...' : 'Guardar y continuar'}
+              </button>
             </div>
           </div>
         </div>

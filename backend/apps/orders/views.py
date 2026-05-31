@@ -11,12 +11,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
 from django.contrib.auth.models import User
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem, Zone
 from .serializers import (
     PriceListSerializer, CustomerSerializer, OrderSerializer,
     OrderItemSerializer, OrderStatusHistorySerializer,
     DeliveryRouteSerializer, DeliveryRouteWriteSerializer,
-    DeliveryRouteItemInputSerializer,
+    DeliveryRouteItemInputSerializer, ZoneSerializer,
 )
 from apps.products.models import Product, StockMovement
 from apps.products.serializers import ProductSerializer
@@ -28,6 +28,14 @@ VALID_TRANSITIONS = {
     'delivered': [],
     'cancelled': [],
 }
+
+
+class ZoneViewSet(viewsets.ModelViewSet):
+    queryset = Zone.objects.all()
+    serializer_class = ZoneSerializer
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'customers'
+    pagination_class = None
 
 
 class PriceListViewSet(viewsets.ModelViewSet):
@@ -227,17 +235,21 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
-        customers = Customer.objects.select_related('price_list').all().order_by('name')
+        customers = Customer.objects.select_related('price_list', 'zone').prefetch_related('enabled_products').all().order_by('name')
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = 'attachment; filename="clientes.csv"'
         response.write('﻿')
         writer = csv.writer(response)
-        writer.writerow(['nombre', 'cuit', 'email', 'telefono', 'direccion', 'localidad', 'prioridad', 'lista_de_precios'])
+        writer.writerow(['nombre', 'cuit', 'email', 'telefono', 'direccion', 'localidad', 'zona', 'latitud', 'longitud', 'prioridad', 'lista_de_precios', 'productos_habilitados'])
         for c in customers:
+            skus = '|'.join(p.sku for p in c.enabled_products.all().order_by('sku'))
             writer.writerow([
-                c.name, c.cuit or '', c.email, c.phone, c.address, c.localidad,
+                c.name, c.cuit or '', c.email or '', c.phone, c.address, c.localidad,
+                c.zone.name if c.zone else '',
+                c.latitude or '', c.longitude or '',
                 c.priority,
                 c.price_list.name if c.price_list else '',
+                skus,
             ])
         return response
 
@@ -253,6 +265,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({'error': 'No se pudo leer el archivo. Verificá que sea un CSV UTF-8.'}, status=400)
 
+        from apps.products.models import Product as Prod
         created = 0
         skipped = 0
         errors = []
@@ -264,6 +277,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
             phone = (row.get('telefono') or '').strip()
             address = (row.get('direccion') or '').strip()
             localidad = (row.get('localidad') or '').strip()
+            zona_name = (row.get('zona') or '').strip()
+            lat_raw = (row.get('latitud') or '').strip()
+            lng_raw = (row.get('longitud') or '').strip()
+            skus_raw = (row.get('productos_habilitados') or '').strip()
 
             if not name:
                 errors.append(f'Fila {i}: nombre es requerido')
@@ -277,7 +294,30 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 skipped += 1
                 continue
 
-            Customer.objects.create(name=name, cuit=cuit, email=email, phone=phone, address=address, localidad=localidad)
+            zone = None
+            if zona_name:
+                zone, _ = Zone.objects.get_or_create(name=zona_name)
+
+            try:
+                latitude = float(lat_raw) if lat_raw else None
+            except ValueError:
+                latitude = None
+            try:
+                longitude = float(lng_raw) if lng_raw else None
+            except ValueError:
+                longitude = None
+
+            customer = Customer.objects.create(
+                name=name, cuit=cuit, email=email, phone=phone,
+                address=address, localidad=localidad,
+                zone=zone, latitude=latitude, longitude=longitude,
+            )
+
+            if skus_raw:
+                skus = [s.strip() for s in skus_raw.split('|') if s.strip()]
+                products = Prod.objects.filter(sku__in=skus)
+                customer.enabled_products.set(products)
+
             created += 1
 
         return Response({'created': created, 'skipped': skipped, 'errors': errors})

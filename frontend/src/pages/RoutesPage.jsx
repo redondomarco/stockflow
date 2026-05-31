@@ -22,71 +22,93 @@ function fmtDate(d) {
 
 // ── PDF helpers ────────────────────────────────────────────────────────────────
 
-async function downloadRouteSheet(route, logoPng) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+async function downloadRouteSheet(route, logo) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
   let headerY = 16
-  if (logoPng) {
-    doc.addImage(logoPng, 'PNG', 14, 6, 40, 20)
-    headerY = 32
+  if (logo) {
+    const logoW = logo.pdfW, logoH = parseFloat((logoW * logo.ratio).toFixed(2))
+    doc.addImage(logo.dataUrl, 'PNG', 14, 6, logoW, logoH)
+    headerY = 8 + logoH + 4
   }
 
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.text(`Hoja de Ruta - ${route.route_number}`, logoPng ? 60 : 14, 16)
+  doc.text(`Hoja de Ruta - ${route.route_number}`, logo ? 60 : 14, 16)
 
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   const meta = `Fecha: ${fmtDate(route.date)}   Repartidor: ${route.driver_name || '-'}   Estado: ${STATUS_LABELS[route.status]}   Pedidos: ${route.items.length}`
-  const metaX = logoPng ? 60 : 14
+  const metaX = logo ? 60 : 14
   doc.text(meta, metaX, 23)
   if (route.notes) doc.text(`Notas: ${route.notes}`, metaX, 29)
 
   autoTable(doc, {
     startY: route.notes ? 33 : 28,
-    head: [['#', 'Pedido', 'Cliente', 'Telefono', 'Direccion', 'Productos', 'Total', 'Notas']],
-    body: route.items.map((item, i) => [
-      i + 1,
-      item.order_number,
-      item.customer_name,
-      item.customer_phone || '',
-      item.shipping_address || item.customer_address || '',
-      item.order_items.map(p => `${p.product_sku} x${p.quantity}`).join('\n'),
-      `$${fmt(item.order_total)}`,
-      item.notes || '',
-    ]),
+    head: [['#', 'Pedido', 'Cliente', 'Direccion', 'Productos', 'Bultos', 'Total', 'Notas']],
+    body: route.items.map((item, i) => {
+      const bultos = item.order_items.reduce((s, p) => s + p.quantity, 0)
+      return [
+        i + 1,
+        item.order_number,
+        item.customer_name,
+        item.shipping_address || item.customer_address || '',
+        item.order_items.map(p => `${p.product_sku} x${p.quantity}`).join('\n'),
+        bultos,
+        `$${fmt(item.order_total)}`,
+        item.notes || '',
+      ]
+    }),
     styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
     headStyles: { fillColor: HEAD_COLOR, textColor: 255, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 8 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 48 },
-      3: { cellWidth: 25 },
-      4: { cellWidth: 50 },
-      5: { cellWidth: 55 },
-      6: { cellWidth: 24 },
-      7: { cellWidth: 'auto' },
+      0: { cellWidth: 6 },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 38 },
+      3: { cellWidth: 33 },
+      4: { cellWidth: 25 },
+      5: { cellWidth: 14, halign: 'center' },
+      6: { cellWidth: 20, halign: 'right' },
+      7: { cellWidth: 30 },
     },
   })
+
+  const totalBultos = route.items.reduce((s, item) =>
+    s + item.order_items.reduce((ss, p) => ss + p.quantity, 0), 0)
+  const finalY = doc.lastAutoTable.finalY + 5
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.text(`Total bultos: ${totalBultos}`, 186, finalY, { align: 'right' })
 
   doc.save(`hoja-ruta-${route.route_number}.pdf`)
 }
 
-function addReceiptPage(doc, item, date, driverName, logoPng) {
+// Renderiza un comprobante a partir de yStart. Retorna el Y final usado.
+function renderReceipt(doc, item, date, driverName, logo, yStart, label) {
   const m = 20
-  let y = 22
+  let y = yStart + 8
 
-  if (logoPng) {
-    doc.addImage(logoPng, 'PNG', m, 8, 35, 18)
-    y = 32
+  // Label ORIGINAL / DUPLICADO
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(120)
+  doc.text(label, 200, yStart + 5, { align: 'right' })
+  doc.setTextColor(0)
+
+  // Logo
+  if (logo) {
+    const logoW = logo.pdfW, logoH = parseFloat((logoW * logo.ratio).toFixed(2))
+    doc.addImage(logo.dataUrl, 'PNG', m, y, logoW, logoH)
+    y += logoH + 4
   }
 
-  doc.setFontSize(14)
+  doc.setFontSize(13)
   doc.setFont('helvetica', 'bold')
   doc.text('Comprobante de Entrega', 105, y, { align: 'center' })
-  y += 10
+  y += 8
 
-  doc.setFontSize(10)
+  doc.setFontSize(9)
+  const bultos = item.order_items.reduce((s, p) => s + p.quantity, 0)
   const rows = [
     ['Pedido:', item.order_number],
     ['Fecha:', fmtDate(date)],
@@ -96,20 +118,17 @@ function addReceiptPage(doc, item, date, driverName, logoPng) {
   if (addr) rows.push(['Direccion:', addr])
   if (item.customer_phone) rows.push(['Tel:', item.customer_phone])
   if (driverName) rows.push(['Repartidor:', driverName])
+  rows.push(['Bultos:', String(bultos)])
 
-  rows.forEach(([label, value]) => {
-    doc.setFont('helvetica', 'bold'); doc.text(label, m, y)
-    doc.setFont('helvetica', 'normal'); doc.text(String(value ?? ''), m + 32, y)
-    y += 7
+  rows.forEach(([lbl, value]) => {
+    doc.setFont('helvetica', 'bold'); doc.text(lbl, m, y)
+    doc.setFont('helvetica', 'normal'); doc.text(String(value ?? ''), m + 30, y)
+    y += 6
   })
   y += 2
 
   const fmtNum = (n) => n != null ? parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
   const hasBundle = item.order_items.some(p => p.is_bundle)
-
-  // Ancho útil: 210mm - 20mm (izq) - 10mm (der) = 180mm
-  // Bundle:     SKU(25) + Cant(12) + Unidad(28) + Caja(28) + Subtotal(28) = 121 → Producto = 59
-  // No bundle:  SKU(25) + Cant(12) + Unidad(32) + Subtotal(32) = 101 → Producto = 79
 
   const head = hasBundle
     ? [['SKU', 'Producto', 'Cant.', 'Unidad', 'Caja', 'Subtotal']]
@@ -118,9 +137,7 @@ function addReceiptPage(doc, item, date, driverName, logoPng) {
   const body = item.order_items.map(p => {
     if (hasBundle) {
       return [
-        p.product_sku,
-        p.product_name,
-        p.quantity,
+        p.product_sku, p.product_name, p.quantity,
         p.is_bundle && p.bundle_unit_price ? `$${fmtNum(p.bundle_unit_price)}` : `$${fmtNum(p.unit_price)}`,
         p.is_bundle ? `$${fmtNum(p.unit_price)}` : '',
         `$${fmtNum(p.subtotal)}`,
@@ -131,8 +148,7 @@ function addReceiptPage(doc, item, date, driverName, logoPng) {
 
   autoTable(doc, {
     startY: y,
-    head,
-    body,
+    head, body,
     styles: { fontSize: 8, cellPadding: 1.5, overflow: 'ellipsize' },
     headStyles: { fillColor: HEAD_COLOR, textColor: 255, fontSize: 8 },
     columnStyles: hasBundle
@@ -141,45 +157,52 @@ function addReceiptPage(doc, item, date, driverName, logoPng) {
     margin: { left: m, right: 10 },
   })
 
-  y = doc.lastAutoTable.finalY + 8
+  y = doc.lastAutoTable.finalY + 6
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(10)
   doc.text(`Total: $${fmt(item.order_total)}`, 200, y, { align: 'right' })
 
   if (item.notes) {
-    y += 7
+    y += 6
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.text(`Notas: ${item.notes}`, m, y)
   }
 
-  const sigY = Math.max(y + 25, doc.lastAutoTable.finalY + 35)
+  const sigY = y + 14
   doc.setDrawColor(150)
   doc.line(m, sigY, 90, sigY)
-  doc.setFontSize(9)
+  doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text('Firma', m, sigY + 5)
+  doc.text('Firma', m, sigY + 4)
+
+  return sigY + 8
 }
 
-async function downloadAllReceipts(route, logoPng) {
+
+async function downloadAllReceipts(route, logo) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   route.items.forEach((item, i) => {
     if (i > 0) doc.addPage()
-    addReceiptPage(doc, item, route.date, route.driver_name, logoPng)
+    renderReceipt(doc, item, route.date, route.driver_name, logo, 0, 'ORIGINAL')
+    doc.addPage()
+    renderReceipt(doc, item, route.date, route.driver_name, logo, 0, 'DUPLICADO')
   })
   doc.save(`comprobantes-${route.route_number}.pdf`)
 }
 
-async function downloadSingleReceipt(item, date, driverName, routeNumber, logoPng) {
+async function downloadSingleReceipt(item, date, driverName, routeNumber, logo) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  addReceiptPage(doc, item, date, driverName, logoPng)
+  renderReceipt(doc, item, date, driverName, logo, 0, 'ORIGINAL')
+  doc.addPage()
+  renderReceipt(doc, item, date, driverName, logo, 0, 'DUPLICADO')
   doc.save(`comprobante-${item.order_number}.pdf`)
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function RoutesPage() {
-  const { logoSvg } = useConfig()
+  const { logoSvg, pdfLogoWidth } = useConfig()
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | 'create' | 'detail' | 'add-orders'
@@ -495,10 +518,10 @@ export default function RoutesPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {selected.items?.length > 0 && (
                     <>
-                      <button className="btn btn-secondary btn-sm" onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadRouteSheet(selected, p) }}>
+                      <button className="btn btn-secondary btn-sm" onClick={async () => { const _r = await svgToPngDataUrl(logoSvg, pdfLogoWidth * 8); const p = _r ? { ..._r, pdfW: pdfLogoWidth } : null; downloadRouteSheet(selected, p) }}>
                         <FileDown size={13} /> Hoja PDF
                       </button>
-                      <button className="btn btn-secondary btn-sm" onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadAllReceipts(selected, p) }}>
+                      <button className="btn btn-secondary btn-sm" onClick={async () => { const _r = await svgToPngDataUrl(logoSvg, pdfLogoWidth * 8); const p = _r ? { ..._r, pdfW: pdfLogoWidth } : null; downloadAllReceipts(selected, p) }}>
                         <FileDown size={13} /> Comprobantes PDF
                       </button>
                     </>
@@ -537,57 +560,79 @@ export default function RoutesPage() {
               {/* Items */}
               {selected.items?.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0' }}>Sin pedidos en esta hoja.</div>
-              ) : (
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Pedido</th>
-                        <th>Cliente / Dirección</th>
-                        <th>Productos</th>
-                        <th>Total</th>
-                        <th style={{ width: 60 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selected.items.map(item => (
-                        <tr key={item.id}>
-                          <td>
-                            <span className="mono text-accent" style={{ fontWeight: 700, fontSize: 12 }}>{item.order_number}</span>
-                            <div className="text-muted text-xs">{item.notes || ''}</div>
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 500 }}>{item.customer_name}</div>
-                            <div className="text-muted text-xs">{item.shipping_address || item.customer_address || '—'}</div>
-                          </td>
-                          <td>
-                            <div style={{ fontSize: 12 }}>
-                              {item.order_items.map((p, i) => (
-                                <div key={i}><span className="mono text-muted">{p.product_sku}</span> ×{p.quantity}</div>
-                              ))}
-                            </div>
-                          </td>
-                          <td><span className="mono">${fmt(item.order_total)}</span></td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              <button className="btn btn-ghost btn-sm" title="Descargar comprobante PDF"
-                                onClick={async () => { const p = await svgToPngDataUrl(logoSvg, 200, 100); downloadSingleReceipt(item, selected.date, selected.driver_name, selected.route_number, p) }}>
-                                <FileDown size={12} />
-                              </button>
-                              {selected.status === 'draft' && (
-                                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }}
-                                  title="Quitar de la hoja" onClick={() => removeItem(item.id)}>
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              ) : (() => {
+                const totalBultos = selected.items.reduce((s, item) =>
+                  s + item.order_items.reduce((ss, p) => ss + p.quantity, 0), 0)
+                return (
+                  <>
+                    <div className="table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Pedido</th>
+                            <th>Cliente / Dirección</th>
+                            <th>Productos</th>
+                            <th style={{ textAlign: 'center' }}>Bultos</th>
+                            <th>Total</th>
+                            <th style={{ width: 60 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selected.items.map(item => {
+                            const bultos = item.order_items.reduce((s, p) => s + p.quantity, 0)
+                            return (
+                              <tr key={item.id}>
+                                <td>
+                                  <span className="mono text-accent" style={{ fontWeight: 700, fontSize: 12 }}>{item.order_number}</span>
+                                  <div className="text-muted text-xs">{item.notes || ''}</div>
+                                </td>
+                                <td>
+                                  <div style={{ fontWeight: 500 }}>{item.customer_name}</div>
+                                  <div className="text-muted text-xs">{item.shipping_address || item.customer_address || '—'}</div>
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: 12 }}>
+                                    {item.order_items.map((p, i) => (
+                                      <div key={i}><span className="mono text-muted">{p.product_sku}</span> ×{p.quantity}</div>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className="mono" style={{ fontWeight: 700 }}>{bultos}</span>
+                                </td>
+                                <td><span className="mono">${fmt(item.order_total)}</span></td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-sm" title="Descargar comprobante PDF"
+                                      onClick={async () => { const _r = await svgToPngDataUrl(logoSvg, pdfLogoWidth * 8); const p = _r ? { ..._r, pdfW: pdfLogoWidth } : null; downloadSingleReceipt(item, selected.date, selected.driver_name, selected.route_number, p) }}>
+                                      <FileDown size={12} />
+                                    </button>
+                                    {selected.status === 'draft' && (
+                                      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }}
+                                        title="Quitar de la hoja" onClick={() => removeItem(item.id)}>
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: '2px solid var(--border-light)' }}>
+                            <td colSpan={3} style={{ textAlign: 'right', fontWeight: 600, fontSize: 13, paddingTop: 8 }}>Total bultos:</td>
+                            <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--accent)', paddingTop: 8 }}>
+                              <span className="mono">{totalBultos}</span>
+                            </td>
+                            <td colSpan={2} />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>

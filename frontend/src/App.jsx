@@ -15,6 +15,7 @@ import DebtDashboardPage from './pages/DebtDashboardPage'
 import RoutesPage from './pages/RoutesPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
+import MapPage from './pages/MapPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="routes" element={<RoutesPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="map" element={<MapPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

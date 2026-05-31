@@ -146,7 +146,7 @@ class SystemConfigView(APIView):
 
     def get(self, request):
         config = SystemConfig.get()
-        return Response({'logo_svg': config.logo_svg})
+        return Response({'logo_svg': config.logo_svg, 'logo_width': config.logo_width, 'pdf_logo_width': config.pdf_logo_width})
 
     def patch(self, request):
         if not request.user.is_superuser:
@@ -154,5 +154,9 @@ class SystemConfigView(APIView):
         config = SystemConfig.get()
         if 'logo_svg' in request.data:
             config.logo_svg = request.data['logo_svg']
-            config.save()
-        return Response({'logo_svg': config.logo_svg})
+        if 'logo_width' in request.data:
+            config.logo_width = int(request.data['logo_width'])
+        if 'pdf_logo_width' in request.data:
+            config.pdf_logo_width = int(request.data['pdf_logo_width'])
+        config.save()
+        return Response({'logo_svg': config.logo_svg, 'logo_width': config.logo_width, 'pdf_logo_width': config.pdf_logo_width})

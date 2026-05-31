@@ -64,6 +64,14 @@ export const productsApi = {
   },
 }
 
+// Zones
+export const zonesApi = {
+  list: () => api.get('/orders/zones/'),
+  create: (data) => api.post('/orders/zones/', data),
+  update: (id, data) => api.patch(`/orders/zones/${id}/`, data),
+  delete: (id) => api.delete(`/orders/zones/${id}/`),
+}
+
 // Price lists
 export const priceListsApi = {
   list: () => api.get('/orders/price-lists/'),

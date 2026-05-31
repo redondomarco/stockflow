@@ -10,6 +10,8 @@ def default_permissions():
 
 class SystemConfig(models.Model):
     logo_svg = models.TextField(blank=True)
+    logo_width = models.PositiveIntegerField(default=140)
+    pdf_logo_width = models.PositiveIntegerField(default=35)
 
     class Meta:
         verbose_name = 'Configuración del sistema'

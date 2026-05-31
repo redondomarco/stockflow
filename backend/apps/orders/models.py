@@ -19,6 +19,20 @@ class PriceList(models.Model):
         return f"{self.name} (×{self.multiplier})"
 
 
+class Zone(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    color = models.CharField(max_length=7, default='#6366f1', blank=True)
+
+    class Meta:
+        verbose_name = 'Zona'
+        verbose_name_plural = 'Zonas'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class Customer(models.Model):
     name = models.CharField(max_length=200)
     cuit = models.CharField(max_length=20, blank=True, null=True, unique=True)
@@ -26,6 +40,9 @@ class Customer(models.Model):
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     localidad = models.CharField(max_length=100, blank=True)
+    zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True, related_name='customers')
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     price_list = models.ForeignKey(PriceList, on_delete=models.SET_NULL, null=True, blank=True, related_name='customers')
     enabled_products = models.ManyToManyField(Product, blank=True, related_name='enabled_for_customers')
     priority = models.PositiveSmallIntegerField(default=5, help_text='Prioridad de entrega del 1 (más urgente) al 10')

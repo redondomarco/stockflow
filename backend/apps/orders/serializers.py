@@ -1,6 +1,17 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem
+from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem, Zone
+
+
+class ZoneSerializer(serializers.ModelSerializer):
+    customer_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Zone
+        fields = ['id', 'name', 'description', 'color', 'customer_count']
+
+    def get_customer_count(self, obj):
+        return obj.customers.count()
 
 
 class PriceListSerializer(serializers.ModelSerializer):
@@ -19,6 +30,8 @@ class CustomerSerializer(serializers.ModelSerializer):
     last_order_date = serializers.SerializerMethodField()
     price_list_name = serializers.CharField(source='price_list.name', read_only=True)
     price_list_multiplier = serializers.SerializerMethodField()
+    zone_name = serializers.CharField(source='zone.name', read_only=True)
+    zone_color = serializers.CharField(source='zone.color', read_only=True)
 
     class Meta:
         model = Customer

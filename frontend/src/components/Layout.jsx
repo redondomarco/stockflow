@@ -3,7 +3,7 @@ import { useAuth, usePermissions } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
-  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings
+  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin
 } from 'lucide-react'
 
 const navItems = [
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/orders', icon: ShoppingCart, label: 'Pedidos', perm: 'orders' },
   { to: '/payments', icon: CreditCard, label: 'Pagos', perm: 'payments' },
   { to: '/routes', icon: Truck, label: 'Hojas de ruta', perm: 'routes' },
+  { to: '/map', icon: MapPin, label: 'Mapa', perm: 'customers' },
   { section: 'CRM' },
   { to: '/customers', icon: Users, label: 'Clientes', perm: 'customers' },
   { to: '/price-lists', icon: Tag, label: 'Listas de precios', perm: 'price_lists' },
@@ -25,7 +26,7 @@ const navItems = [
 export default function Layout() {
   const { user, isAdmin, logout } = useAuth()
   const { isHidden } = usePermissions()
-  const { logoSvg } = useConfig()
+  const { logoSvg, logoWidth } = useConfig()
   const navigate = useNavigate()
 
   const handleLogout = () => { logout(); navigate('/login') }
@@ -50,7 +51,7 @@ export default function Layout() {
           {logoSvg ? (
             <div
               dangerouslySetInnerHTML={{ __html: logoSvg }}
-              style={{ maxWidth: 140, maxHeight: 48, display: 'flex', alignItems: 'center' }}
+              style={{ width: logoWidth, maxHeight: 60, display: 'flex', alignItems: 'center' }}
             />
           ) : (
             <>

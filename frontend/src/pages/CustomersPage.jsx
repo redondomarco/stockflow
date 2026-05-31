@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ordersApi, priceListsApi, productsApi } from '../services/api'
-import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package } from 'lucide-react'
+import { ordersApi, priceListsApi, productsApi, zonesApi } from '../services/api'
+import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package, Map, MapPin } from 'lucide-react'
+import MapPicker from '../components/MapPicker'
 
-const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', price_list: '', priority: 5 }
+const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', zone: '', latitude: '', longitude: '', price_list: '', priority: 5 }
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([])
   const [priceLists, setPriceLists] = useState([])
+  const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
@@ -20,19 +22,29 @@ export default function CustomersPage() {
   const fileRef = useRef()
 
   // Products modal
-  const [productModal, setProductModal] = useState(null) // null | { customer, selectedIds: Set }
+  const [productModal, setProductModal] = useState(null)
   const [allProducts, setAllProducts] = useState([])
   const [loadingPM, setLoadingPM] = useState(false)
   const [savingPM, setSavingPM] = useState(false)
+
+  const [mapOpen, setMapOpen] = useState(false)
+
+  // Zones modal
+  const [zoneModal, setZoneModal] = useState(false)
+  const [zoneForm, setZoneForm] = useState({ name: '', description: '', color: '#6366f1' })
+  const [editingZone, setEditingZone] = useState(null)
+  const [savingZone, setSavingZone] = useState(false)
 
   const load = () => {
     setLoading(true)
     Promise.all([
       ordersApi.customers({ search }),
       priceListsApi.list(),
-    ]).then(([c, pl]) => {
+      zonesApi.list(),
+    ]).then(([c, pl, z]) => {
       setCustomers(c.data.results || c.data)
       setPriceLists(pl.data.results || pl.data)
+      setZones(z.data)
     }).finally(() => setLoading(false))
   }
 
@@ -41,7 +53,7 @@ export default function CustomersPage() {
   const openCreate = () => { setForm(emptyCustomer); setError(''); setModal('create') }
   const openEdit = (c) => {
     setSelected(c)
-    setForm({ name: c.name, cuit: c.cuit ?? '', email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
+    setForm({ name: c.name, cuit: c.cuit ?? '', email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', zone: c.zone ?? '', latitude: c.latitude ?? '', longitude: c.longitude ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
     setError('')
     setModal('edit')
   }
@@ -49,7 +61,7 @@ export default function CustomersPage() {
   const save = async () => {
     setSaving(true); setError('')
     try {
-      const payload = { ...form, price_list: form.price_list || null, email: form.email || null }
+      const payload = { ...form, price_list: form.price_list || null, email: form.email || null, zone: form.zone || null, latitude: form.latitude || null, longitude: form.longitude || null }
       if (modal === 'edit') await ordersApi.updateCustomer(selected.id, payload)
       else await ordersApi.createCustomer(payload)
       setModal(null); load()
@@ -110,6 +122,22 @@ export default function CustomersPage() {
     } finally { setImporting(false) }
   }
 
+  const saveZone = async () => {
+    setSavingZone(true)
+    try {
+      if (editingZone) await zonesApi.update(editingZone.id, zoneForm)
+      else await zonesApi.create(zoneForm)
+      const z = await zonesApi.list(); setZones(z.data)
+      setZoneForm({ name: '', description: '', color: '#6366f1' }); setEditingZone(null)
+    } finally { setSavingZone(false) }
+  }
+
+  const deleteZone = async (id) => {
+    if (!confirm('¿Eliminar esta zona?')) return
+    await zonesApi.delete(id)
+    zonesApi.list().then(r => setZones(r.data))
+  }
+
   const f = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
 
   return (
@@ -127,6 +155,7 @@ export default function CustomersPage() {
             <Upload size={15} /> {importing ? 'Importando...' : 'Importar CSV'}
           </button>
           <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+          <button className="btn btn-secondary" onClick={() => setZoneModal(true)}><Map size={15} /> Zonas</button>
           <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo cliente</button>
         </div>
       </div>
@@ -168,6 +197,7 @@ export default function CustomersPage() {
                     <th>Email</th>
                     <th>Teléfono</th>
                     <th>Localidad</th>
+                    <th>Zona</th>
                     <th>Prioridad</th>
                     <th>Lista de precios</th>
                     <th>Pedidos</th>
@@ -186,6 +216,14 @@ export default function CustomersPage() {
                       <td className="text-muted">{c.email || '–'}</td>
                       <td className="text-muted">{c.phone || '–'}</td>
                       <td className="text-muted text-sm">{c.localidad || '–'}</td>
+                      <td>
+                        {c.zone_name ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: c.zone_color || '#6366f1', flexShrink: 0 }} />
+                            {c.zone_name}
+                          </span>
+                        ) : <span className="text-muted text-xs">–</span>}
+                      </td>
                       <td>
                         <span className="mono" style={{ fontWeight: 700, color: c.priority <= 3 ? 'var(--red)' : c.priority <= 6 ? 'var(--yellow)' : 'var(--text-muted)', fontSize: 13 }}>
                           {c.priority}
@@ -256,6 +294,32 @@ export default function CustomersPage() {
                 <div className="form-group">
                   <label className="form-label">Localidad</label>
                   <input className="form-input" value={form.localidad} onChange={f('localidad')} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Zona</label>
+                  <select className="form-select" value={form.zone} onChange={f('zone')}>
+                    <option value="">Sin zona</option>
+                    {zones.map(z => (
+                      <option key={z.id} value={z.id}>{z.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ubicación</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setMapOpen(true)}>
+                    <MapPin size={14} /> {form.latitude && form.longitude ? 'Editar en mapa' : 'Configurar en mapa'}
+                  </button>
+                  {form.latitude && form.longitude && (
+                    <>
+                      <span className="mono text-sm text-muted">{parseFloat(form.latitude).toFixed(6)}, {parseFloat(form.longitude).toFixed(6)}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }}
+                        onClick={() => setForm(p => ({ ...p, latitude: '', longitude: '' }))}>
+                        <X size={13} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="form-grid">
@@ -343,6 +407,99 @@ export default function CustomersPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setProductModal(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={saveProductModal} disabled={savingPM}>{savingPM ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Map modal ───────────────────────────────── */}
+      {mapOpen && (
+        <div className="modal-overlay" onClick={() => setMapOpen(false)}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 700 }}>
+            <div className="modal-header">
+              <span className="modal-title">Configurar ubicación</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setMapOpen(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <MapPicker
+                lat={form.latitude}
+                lng={form.longitude}
+                onConfirm={(lat, lng) => {
+                  setForm(p => ({ ...p, latitude: lat, longitude: lng }))
+                  setMapOpen(false)
+                }}
+                onClose={() => setMapOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Zones modal ─────────────────────────────── */}
+      {zoneModal && (
+        <div className="modal-overlay" onClick={() => setZoneModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Zonas</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setZoneModal(false)}><X size={16} /></button>
+            </div>
+            <div className="modal-body">
+              {/* Form */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ flex: 2, margin: 0, minWidth: 120 }}>
+                  <label className="form-label">Nombre</label>
+                  <input className="form-input" value={zoneForm.name}
+                    onChange={e => setZoneForm(p => ({ ...p, name: e.target.value }))} placeholder="Nombre de zona" />
+                </div>
+                <div className="form-group" style={{ flex: 2, margin: 0, minWidth: 120 }}>
+                  <label className="form-label">Descripción</label>
+                  <input className="form-input" value={zoneForm.description}
+                    onChange={e => setZoneForm(p => ({ ...p, description: e.target.value }))} placeholder="Opcional" />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Color</label>
+                  <input type="color" value={zoneForm.color}
+                    onChange={e => setZoneForm(p => ({ ...p, color: e.target.value }))}
+                    style={{ width: 40, height: 36, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none', padding: 2 }} />
+                </div>
+                <button className="btn btn-primary" onClick={saveZone} disabled={savingZone || !zoneForm.name}>
+                  {editingZone ? 'Guardar' : 'Agregar'}
+                </button>
+                {editingZone && (
+                  <button className="btn btn-secondary" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '', color: '#6366f1' }) }}>
+                    Cancelar
+                  </button>
+                )}
+              </div>
+              {/* List */}
+              <table style={{ width: '100%' }}>
+                <thead>
+                  <tr><th>Color</th><th>Nombre</th><th>Descripción</th><th>Clientes</th><th style={{ width: 80 }}></th></tr>
+                </thead>
+                <tbody>
+                  {zones.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 16, fontSize: 13 }}>Sin zonas</td></tr>
+                  )}
+                  {zones.map(z => (
+                    <tr key={z.id}>
+                      <td><span style={{ display: 'inline-block', width: 16, height: 16, borderRadius: '50%', background: z.color }} /></td>
+                      <td style={{ fontWeight: 500 }}>{z.name}</td>
+                      <td className="text-muted text-sm">{z.description || '–'}</td>
+                      <td className="mono text-sm">{z.customer_count}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setEditingZone(z); setZoneForm({ name: z.name, description: z.description, color: z.color }) }}>
+                            <Edit2 size={13} />
+                          </button>
+                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => deleteZone(z.id)}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

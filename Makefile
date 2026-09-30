@@ -1,7 +1,10 @@
 DC = docker compose
+DC_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
-.PHONY: start stop restart build logs shell-backend shell-db migrate reset
+.PHONY: start stop restart build deploy logs shell-backend shell-db migrate reset \
+        dev dev-build makemigrations test
 
+# ── Producción ────────────────────────────────────────────────
 start:
 	$(DC) up -d
 
@@ -13,6 +16,10 @@ restart:
 
 build:
 	$(DC) up -d --build
+
+# Reconstruye imágenes (backend + frontend compilado) y recrea los contenedores
+deploy:
+	$(DC) up -d --build --remove-orphans
 
 logs:
 	$(DC) logs -f
@@ -28,3 +35,17 @@ shell-db:
 
 reset:
 	$(DC) down -v
+
+# ── Desarrollo ────────────────────────────────────────────────
+dev:
+	$(DC_DEV) up
+
+dev-build:
+	$(DC_DEV) up --build
+
+# Las migraciones se generan en desarrollo y se commitean
+makemigrations:
+	$(DC_DEV) exec backend python manage.py makemigrations
+
+test:
+	$(DC_DEV) exec backend python manage.py test apps --noinput

@@ -14,24 +14,26 @@ StockFlow is a full-stack inventory/order management system for a small distribu
 
 ## Running the project
 
+Config and secrets live in `.env` (not versioned; copy `.env.example`). `SECRET_KEY` and `POSTGRES_PASSWORD` are required.
+
 ```bash
 cd stockflow
-docker compose up --build   # first run (~3 min)
-docker compose up           # subsequent runs
-docker compose down -v      # full reset including volumes
-make start / stop / build / migrate / shell-backend / shell-db / reset
+make deploy        # production: build images (frontend compiled into nginx) and recreate containers
+make dev           # development: docker-compose.yml + docker-compose.dev.yml (code mounted, --reload, Vite HMR)
+make test          # run backend tests (dev stack must be up)
+make makemigrations / migrate / shell-backend / shell-db / logs / reset
 ```
 
-| Service     | URL                        |
-|-------------|----------------------------|
-| Frontend    | http://localhost:3000       |
-| Backend API | http://localhost:8000/api   |
-| Admin       | http://localhost:8000/admin |
-| Nginx proxy | http://localhost:80         |
+| Mode | Service | URL |
+|------|---------|-----|
+| prod | App (nginx: SPA + /api + /admin) | http://localhost (`HTTP_PORT`) |
+| dev  | Vite dev server                  | http://localhost:3000 |
+| dev  | Backend API                      | http://localhost:8000/api |
+| dev  | PostgreSQL                       | 127.0.0.1:5432 |
 
-Default credentials: `admin` / `admin123`
+In production only nginx publishes a port; db, redis and backend are internal. `DEBUG` defaults to `False` and Django refuses to start without `SECRET_KEY` unless `DEBUG=True`.
 
-`backend/entrypoint.sh` auto-runs `makemigrations`, `migrate`, `collectstatic`, and creates the admin user on every container start.
+`backend/entrypoint.sh` runs `migrate` and `collectstatic` on every start. It does **not** run `makemigrations` (migrations are generated in dev and committed). The initial superuser is created only if the DB has none, using `ADMIN_USERNAME`/`ADMIN_PASSWORD` from `.env`.
 
 ## Backend architecture (`backend/apps/`)
 

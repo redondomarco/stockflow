@@ -1,0 +1,31 @@
+# Desarrollo: código montado con recarga automática, Vite con HMR y puertos expuestos.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up  (o `make dev`)
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  backend:
+    volumes:
+      - ./backend:/app
+    environment:
+      - DEBUG=True
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000
+    ports:
+      - "8000:8000"
+    command: ["gunicorn", "stockflow.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--reload"]
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: stockflow_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend

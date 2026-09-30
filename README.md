@@ -15,35 +15,42 @@ Sistema completo de gestión de stock, pedidos y pagos.
 - Docker >= 24
 - Docker Compose >= 2
 
-### Levantar el proyecto
+### Configuración
 
 ```bash
 cd stockflow
-docker compose up --build
+cp .env.example .env
+# completar SECRET_KEY, POSTGRES_PASSWORD, ALLOWED_HOSTS y ADMIN_PASSWORD
 ```
 
-La primera vez tarda ~3 minutos en construir las imágenes.
+### Producción
 
-### Acceso
+```bash
+make deploy        # compila frontend y backend y levanta todo
+```
+
+La app queda en `http://<servidor>` (puerto `HTTP_PORT`, 80 por defecto). Solo nginx expone un puerto.
+
+### Desarrollo
+
+```bash
+make dev           # código montado con recarga automática
+make test          # tests del backend
+```
 
 | Servicio | URL |
 |---|---|
-| Frontend (React) | http://localhost:3000 |
+| Frontend (Vite) | http://localhost:3000 |
 | Backend (API) | http://localhost:8000/api |
 | Django Admin | http://localhost:8000/admin |
-| Nginx (proxy) | http://localhost:80 |
 
-### Credenciales por defecto
+### Credenciales
 
+El superusuario inicial se crea solo si la base no tiene ninguno, con `ADMIN_USERNAME` / `ADMIN_PASSWORD` de `.env`. Si no, crearlo con:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
 ```
-Usuario: admin
-Contraseña: admin123
-```
-
-> Si el login no funciona, crear superuser manualmente:
-> ```bash
-> docker compose exec backend python manage.py createsuperuser
-> ```
 
 ---
 
@@ -163,16 +170,17 @@ docker compose down -v
 
 ---
 
-## 🔧 Variables de entorno (backend)
+## 🔧 Variables de entorno (`.env`)
 
-| Variable | Default | Descripción |
-|---|---|---|
-| `SECRET_KEY` | insecure-key | Django secret key |
-| `DEBUG` | True | Modo debug |
-| `DATABASE_URL` | postgresql://... | URL de PostgreSQL |
-| `REDIS_URL` | redis://redis:6379/0 | URL de Redis |
-| `ALLOWED_HOSTS` | localhost,127.0.0.1 | Hosts permitidos |
-| `CORS_ALLOWED_ORIGINS` | http://localhost:3000 | Orígenes CORS |
+| Variable | Descripción |
+|---|---|
+| `SECRET_KEY` | Clave de Django (obligatoria en producción) |
+| `DEBUG` | `False` en producción |
+| `ALLOWED_HOSTS` | Hosts/IPs por los que se accede |
+| `CSRF_TRUSTED_ORIGINS` | Orígenes del admin, con esquema (`http://192.168.1.200`) |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Base de datos |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Superusuario inicial (solo en base vacía) |
+| `HTTP_PORT` | Puerto publicado por nginx (80) |
 
 ---
 

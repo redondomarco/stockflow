@@ -7,24 +7,28 @@ while ! nc -z ${DB_HOST:-db} ${DB_PORT:-5432}; do
 done
 echo "✅ PostgreSQL disponible"
 
-echo "🔄 Generando migraciones..."
-python manage.py makemigrations products orders payments --noinput
-
+# Las migraciones se generan en desarrollo y se versionan en git;
+# acá solo se aplican.
 echo "🔄 Aplicando migraciones..."
 python manage.py migrate --noinput
 
 echo "📦 Recopilando archivos estáticos..."
 python manage.py collectstatic --noinput
 
-echo "👤 Creando superusuario admin (si no existe)..."
+# Superusuario inicial solo en una base sin superusuarios, con la contraseña de .env
 python manage.py shell << 'PYEOF'
+import os
 from django.contrib.auth import get_user_model
 User = get_user_model()
-if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@stockflow.com', 'admin123')
-    print('  -> Usuario admin creado')
+if User.objects.filter(is_superuser=True).exists():
+    print('👤 Ya existe un superusuario')
+elif os.environ.get('ADMIN_PASSWORD'):
+    User.objects.create_superuser(
+        os.environ.get('ADMIN_USERNAME', 'admin'), os.environ.get('ADMIN_EMAIL', ''), os.environ['ADMIN_PASSWORD'],
+    )
+    print('👤 Superusuario inicial creado')
 else:
-    print('  -> Usuario admin ya existe')
+    print('⚠️  No hay superusuarios: definí ADMIN_PASSWORD en .env o usá "manage.py createsuperuser"')
 PYEOF
 
 echo "🚀 Iniciando servidor..."

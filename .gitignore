@@ -34,3 +34,7 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Tests
+.coverage
+htmlcov/

@@ -73,6 +73,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         movement_type = data['movement_type']
 
         with transaction.atomic():
+            product = Product.objects.select_for_update().get(pk=product.pk)
             stock_before = product.stock
 
             if movement_type == 'in':
@@ -82,7 +83,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             else:  # adjustment
                 product.stock = quantity
 
-            product.save()
+            product.save(update_fields=['stock', 'updated_at'])
 
             StockMovement.objects.create(
                 product=product,

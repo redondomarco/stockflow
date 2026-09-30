@@ -299,6 +299,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
             lat_raw = (row.get('latitud') or '').strip()
             lng_raw = (row.get('longitud') or '').strip()
             skus_raw = (row.get('productos_habilitados') or '').strip()
+            priority_raw = (row.get('prioridad') or '').strip()
+            price_list_name = (row.get('lista_de_precios') or '').strip()
 
             if not name:
                 errors.append(f'Fila {i}: nombre es requerido')
@@ -325,10 +327,28 @@ class CustomerViewSet(viewsets.ModelViewSet):
             except ValueError:
                 longitude = None
 
+            # Prioridad y lista inválidas no impiden crear el cliente: se usa el default y se informa.
+            priority = 5
+            if priority_raw:
+                try:
+                    priority = int(priority_raw)
+                    if not 1 <= priority <= 10:
+                        raise ValueError
+                except ValueError:
+                    priority = 5
+                    errors.append(f'Fila {i}: prioridad inválida "{priority_raw}" (1 a 10); se usó 5')
+
+            price_list = None
+            if price_list_name:
+                price_list = PriceList.objects.filter(name=price_list_name).first()
+                if price_list is None:
+                    errors.append(f'Fila {i}: lista de precios "{price_list_name}" inexistente; se creó sin lista')
+
             customer = Customer.objects.create(
                 name=name, cuit=cuit, email=email, phone=phone,
                 address=address, localidad=localidad,
                 zone=zone, latitude=latitude, longitude=longitude,
+                priority=priority, price_list=price_list,
                 is_active=is_active,
             )
 
@@ -447,53 +467,54 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def deliver(self, request, pk=None):
-        """Registrar entrega (total o parcial) de ítems del pedido."""
-        order = self.get_object()
-        if order.status in ('delivered', 'cancelled'):
-            return Response(
-                {'error': f'No se puede entregar un pedido {order.get_status_display()}'},
-                status=400,
-            )
-
+        """Registrar entrega (total o parcial) de ítems del pedido. Todo o nada."""
         items_data = request.data.get('items', [])
-        if not items_data:
+        if not isinstance(items_data, list) or not items_data:
             return Response({'error': 'Indicá al menos un ítem a entregar'}, status=400)
 
-        with transaction.atomic():
-            for item_data in items_data:
-                item_id = item_data.get('order_item_id')
-                quantity = int(item_data.get('quantity', 0))
-                if quantity <= 0:
-                    continue
-                try:
-                    item = order.items.get(id=item_id)
-                except OrderItem.DoesNotExist:
-                    return Response({'error': f'Ítem {item_id} no pertenece a este pedido'}, status=400)
-                max_deliverable = item.quantity - item.delivered_quantity
-                if quantity > max_deliverable:
-                    return Response(
-                        {'error': f'No se pueden entregar {quantity} de "{item.product.name}" (máximo: {max_deliverable})'},
-                        status=400,
+        try:
+            with transaction.atomic():
+                order = Order.objects.select_for_update().get(pk=self.get_object().pk)
+                if order.status in ('delivered', 'cancelled'):
+                    raise BusinessRuleError(f'No se puede entregar un pedido {order.get_status_display()}')
+
+                items = {it.id: it for it in order.items.select_related('product')}
+                for item_data in items_data:
+                    try:
+                        item_id = int(item_data.get('order_item_id'))
+                        quantity = int(item_data.get('quantity', 0))
+                    except (TypeError, ValueError, AttributeError):
+                        raise BusinessRuleError('Ítem y cantidad deben ser números enteros.')
+                    if quantity <= 0:
+                        continue
+                    item = items.get(item_id)
+                    if item is None:
+                        raise BusinessRuleError(f'Ítem {item_id} no pertenece a este pedido')
+                    max_deliverable = item.quantity - item.delivered_quantity
+                    if quantity > max_deliverable:
+                        raise BusinessRuleError(
+                            f'No se pueden entregar {quantity} de "{item.product.name}" (máximo: {max_deliverable})'
+                        )
+                    item.delivered_quantity += quantity
+                    item.save(update_fields=['delivered_quantity'])
+
+                all_delivered = all(it.quantity == it.delivered_quantity for it in items.values())
+                any_delivered = any(it.delivered_quantity > 0 for it in items.values())
+                old_status = order.status
+                new_status = 'delivered' if all_delivered else ('partial' if any_delivered else old_status)
+
+                if new_status != old_status:
+                    order.status = new_status
+                    order.save()
+                    OrderStatusHistory.objects.create(
+                        order=order,
+                        old_status=old_status,
+                        new_status=new_status,
+                        changed_by=request.user,
+                        comment=request.data.get('comment', ''),
                     )
-                item.delivered_quantity += quantity
-                item.save()
-
-            items = list(OrderItem.objects.filter(order=order))
-            all_delivered = all(it.quantity == it.delivered_quantity for it in items)
-            any_delivered = any(it.delivered_quantity > 0 for it in items)
-            old_status = order.status
-            new_status = 'delivered' if all_delivered else ('partial' if any_delivered else old_status)
-
-            if new_status != old_status:
-                order.status = new_status
-                order.save()
-                OrderStatusHistory.objects.create(
-                    order=order,
-                    old_status=old_status,
-                    new_status=new_status,
-                    changed_by=request.user,
-                    comment=request.data.get('comment', ''),
-                )
+        except BusinessRuleError as e:
+            return e.response()
 
         order.refresh_from_db()
         return Response(OrderSerializer(order).data)
@@ -631,6 +652,17 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
             route = serializer.save()
         return Response(DeliveryRouteSerializer(route).data, status=status.HTTP_201_CREATED)
 
+    def update(self, request, *args, **kwargs):
+        # Los ítems se gestionan con add_orders / remove_item; acá solo fecha, repartidor y notas.
+        if 'items' in request.data:
+            return Response({'error': 'Usá add_orders / remove_item para modificar los pedidos de la hoja.'}, status=400)
+        partial = kwargs.pop('partial', False)
+        serializer = DeliveryRouteWriteSerializer(self.get_object(), data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        route = serializer.save()
+        # Se devuelve la hoja completa: el frontend reemplaza la seleccionada con esta respuesta.
+        return Response(DeliveryRouteSerializer(self.get_queryset().get(pk=route.pk)).data)
+
     @action(detail=False, methods=['get'])
     def available_orders(self, request):
         """Pedidos pendientes/parciales que no están en ninguna hoja activa."""
@@ -667,6 +699,11 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=400)
         items_data = serializer.validated_data
         order_ids = [item['order'].id for item in items_data]
+        if len(order_ids) != len(set(order_ids)):
+            return Response({'error': 'Hay pedidos duplicados en la lista.'}, status=400)
+        not_pending = [item['order'].order_number for item in items_data if item['order'].status not in ('pending', 'partial')]
+        if not_pending:
+            return Response({'error': f'Los pedidos {", ".join(not_pending)} no están pendientes ni parciales.'}, status=400)
         conflicts = DeliveryRouteItem.objects.filter(
             order_id__in=order_ids,
             route__status__in=['draft', 'in_progress'],

@@ -50,6 +50,12 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
 
 class StockAdjustmentSerializer(serializers.Serializer):
-    quantity = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=0)
     movement_type = serializers.ChoiceField(choices=['in', 'out', 'adjustment'])
     reason = serializers.CharField(max_length=300, required=False, allow_blank=True)
+
+    def validate(self, data):
+        # Entradas y salidas mueven al menos una unidad; un ajuste fija el stock (puede ser 0).
+        if data['movement_type'] in ('in', 'out') and data['quantity'] == 0:
+            raise serializers.ValidationError({'quantity': 'La cantidad debe ser mayor a cero.'})
+        return data

@@ -67,7 +67,8 @@ export default function ProductsPage() {
       setModal(null)
       load()
     } catch (e) {
-      setError(e.response?.data?.error || 'Error')
+      const data = e.response?.data
+      setError(data?.error || data?.quantity?.[0] || data?.non_field_errors?.[0] || 'Error')
     } finally { setSaving(false) }
   }
 

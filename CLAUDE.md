@@ -35,6 +35,18 @@ In production only nginx publishes a port; db, redis and backend are internal. `
 
 `backend/entrypoint.sh` runs `migrate` and `collectstatic` on every start. It does **not** run `makemigrations` (migrations are generated in dev and committed). The initial superuser is created only if the DB has none, using `ADMIN_USERNAME`/`ADMIN_PASSWORD` from `.env`.
 
+## Testing
+
+```bash
+make test                                              # all backend tests (dev stack up)
+docker compose exec backend python manage.py test apps.orders.test_delivery   # one module
+```
+
+- Tests live in each app: `orders/tests.py` (create/edit, pricing, stock policy), `orders/test_delivery.py` (deliver, routes), `orders/test_customers.py` (customers, CSV, account statement, price lists), `orders/test_numbering.py` (incl. multi-thread), `payments/tests.py`, `products/tests.py` (stock adjustments, CSV, section permissions), `users/tests.py`
+- They run against PostgreSQL (the multi-thread numbering test needs real row locks); Redis is not needed
+- CI: `.github/workflows/tests.yml` runs backend tests with coverage, checks `makemigrations --check`, and builds the frontend
+- Every bug fix should come with a test that fails before the fix
+
 ## Backend architecture (`backend/apps/`)
 
 ### `products`
@@ -53,7 +65,7 @@ In production only nginx publishes a port; db, redis and backend are internal. `
 - **DeliveryRoute**: `route_number` auto-generated as `HR-00000001` (sequential); `driver` FK to `auth.User`; status flow: `draft → in_progress → completed/cancelled`, `cancelled → draft`; an order can only be on one active route at a time
 - **PriceList**: multiplier-based pricing linked to customers
 - `available_orders` endpoint returns orders not yet on a route, ordered by `customer__priority, customer__name`
-- CSV customers: `nombre, cuit, email, telefono, direccion, localidad, zona, latitud, longitud, prioridad, lista_de_precios, productos_habilitados` (products as pipe-separated SKUs; `zona` creates the Zone if not exists on import)
+- CSV customers: `nombre, activo, cuit, email, telefono, direccion, localidad, zona, latitud, longitud, prioridad, lista_de_precios, productos_habilitados` (products as pipe-separated SKUs; `zona` creates the Zone if not exists on import; an unknown `lista_de_precios` or invalid `prioridad` is reported as a row error but the customer is still created; customers with an existing CUIT/email are skipped)
 
 ### `payments`
 - Models: `Payment` (+ `needs_review` flag); rules in `payments/services.py` (tests: `python manage.py test apps.payments`)
@@ -132,6 +144,9 @@ PATCH      /api/users/config/             # superuser only
 - Orders only accept active products enabled for the customer (`enabled_products`), active customers, integer quantities > 0, no repeated products, non-negative `shipping_cost`/`discount`
 - **Stock policy** (`SystemConfig.stock_policy`, editable in Configuración): `allow` (default, stock may go negative) / `warn` (409 `code=stock_warning` + `shortages` until the client resends with `confirm_stock: true`) / `block` (400 `code=insufficient_stock`; superusers and users with `UserProfile.can_override_stock` get the `warn` flow instead). Products with `track_stock=False` are never checked. Orders accepted with shortages record it in the status history comment
 - Stock decremented on order **creation**, restored on **cancellation**
+- `deliver` is all-or-nothing: an invalid item rolls back the whole delivery
+- Deleting a record referenced by `on_delete=PROTECT` (product/customer with orders) returns 400 via `stockflow/exceptions.py` instead of 500 — deactivate instead
+- Manual stock adjustments: `in`/`out` need quantity > 0; `adjustment` sets the absolute stock (≥ 0)
 - `Order.order_number` → `NV-00000001` format (sequential, not UUID)
 - **Numbering** (NV, HR, auto CUIT) uses `NumberSequence` rows (`order_number`, `route_number`, `customer_auto_cuit`) locked with `select_for_update` inside the model's `save()` transaction: concurrent creations never collide and a rolled-back creation doesn't consume a number. Numbers already taken (e.g. entered manually) are skipped; a missing row is seeded from the current max. Tests: `apps/orders/test_numbering.py` (includes a multi-thread test)
 - `DeliveryRoute.route_number` → `HR-00000001` format

@@ -47,14 +47,18 @@ Default credentials: `admin` / `admin123`
 - Models: `Zone`, `PriceList`, `Customer`, `Order`, `OrderItem`, `OrderStatusHistory`, `DeliveryRoute`, `DeliveryRouteItem`
 - **Zone**: `name`, `description`, `color` (hex, default `#6366f1`) — used to group and color-code customers on the map
 - **Customer**: extended with `cuit` (unique auto-generated as `00-XXXXXXXX-0` if blank), `localidad`, `zone` (FK), `latitude`, `longitude`, `priority`; has M2M `enabled_products` restricting what a customer can order
-- **Order**: `order_number` auto-generated as `NV-00000001` (sequential, regex-based max); status flow: `pending → confirmed → processing → shipped → delivered`, any cancellable state → `cancelled`
+- **Order**: `order_number` auto-generated as `NV-00000001` (sequential, see numbering below); status flow: `pending → partial → delivered` (driven by the `deliver` action), `pending`/`partial` → `cancelled`
 - **DeliveryRoute**: `route_number` auto-generated as `HR-00000001` (sequential); `driver` FK to `auth.User`; status flow: `draft → in_progress → completed/cancelled`, `cancelled → draft`; an order can only be on one active route at a time
 - **PriceList**: multiplier-based pricing linked to customers
 - `available_orders` endpoint returns orders not yet on a route, ordered by `customer__priority, customer__name`
 - CSV customers: `nombre, cuit, email, telefono, direccion, localidad, zona, latitud, longitud, prioridad, lista_de_precios, productos_habilitados` (products as pipe-separated SKUs; `zona` creates the Zone if not exists on import)
 
 ### `payments`
-- Models: `Payment`; status: `pending → approved / rejected`; approved → `refunded`
+- Models: `Payment` (+ `needs_review` flag); rules in `payments/services.py` (tests: `python manage.py test apps.payments`)
+- Transitions only via actions: `pending/processing → approved | rejected` (`approve`, `reject`), `approved → refunded` (`refund`); `status` is read-only in the serializer. Only pending payments are editable; approved/refunded can't be deleted. Amount must be > 0; cancelled orders accept no payments
+- `SystemConfig.overpayment_policy` (`allow`/`warn`/`block`): amount vs. order balance (total − approved), checked on create and again on approve. `warn` → 409 `code=overpayment_warning` until resent with `confirm_overpayment: true`
+- `SystemConfig.payment_approval` (`section`/`restricted`): `restricted` → approve/reject/refund/mark_reviewed only for superusers or `UserProfile.can_approve_payments`
+- Order cancellation (`change_status` → `cancelled`, atomic): pending payments are always rejected; approved ones follow `SystemConfig.cancelled_order_payments`: `keep` (unchanged), `review` (sets `needs_review=True`, cleared by `refund` or `mark_reviewed`), `refund` (auto-refunded)
 
 ### `users`
 - Models: `UserProfile` (OneToOne to `auth.User`), `SystemConfig` (singleton)
@@ -63,7 +67,7 @@ Default credentials: `admin` / `admin123`
 - **`SectionPermission`** (in `users/permissions.py`): custom DRF permission class applied to all ViewSets via `permission_classes = [IsAuthenticated, SectionPermission]` and a `permission_section = '<section>'` class attribute. `hidden` → 403; `read` + non-safe method → 403; superusers bypass all checks
 - Section names used: `products`, `stock`, `orders`, `payments`, `routes`, `customers`, `price_lists`
 - `UserViewSet`: CRUD + `me`, `export_csv`, `import_csv` — only `me` available to non-admin
-- **`SystemConfig`**: singleton accessed via `SystemConfig.get()`; fields: `logo_svg` (text), `logo_width` (px, default 140), `pdf_logo_width` (mm, default 35). GET via `/api/users/config/`, PATCH (superuser only).
+- **`SystemConfig`**: singleton accessed via `SystemConfig.get()`; fields: `logo_svg` (text), `logo_width` (px, default 140), `pdf_logo_width` (mm, default 35), `stock_policy`, `overpayment_policy`, `cancelled_order_payments`, `payment_approval`. GET via `/api/users/config/`, PATCH (superuser only).
 
 ## Frontend architecture (`frontend/src/`)
 
@@ -100,6 +104,7 @@ GET        /api/products/export_csv/
 POST       /api/products/import_csv/
 
 GET/POST   /api/orders/                   # orders (NV-XXXXXXXX)
+GET        /api/orders/today/?customer=<id>  # non-cancelled orders created today (local date) — create-order warning
 GET/POST   /api/orders/customers/
 GET/POST   /api/orders/zones/
 GET/POST   /api/orders/price-lists/
@@ -120,8 +125,13 @@ PATCH      /api/users/config/             # superuser only
 
 ## Key business rules
 
+- Order creation/edition logic lives in `orders/services.py` (tests: `docker compose exec backend python manage.py test apps.orders`)
+- **Prices are computed server-side**: `product.price × customer.price_list.multiplier` (skipped if `fixed_price`), rounded half-up to cents. Any `unit_price` sent by the client is ignored
+- Orders only accept active products enabled for the customer (`enabled_products`), active customers, integer quantities > 0, no repeated products, non-negative `shipping_cost`/`discount`
+- **Stock policy** (`SystemConfig.stock_policy`, editable in Configuración): `allow` (default, stock may go negative) / `warn` (409 `code=stock_warning` + `shortages` until the client resends with `confirm_stock: true`) / `block` (400 `code=insufficient_stock`; superusers and users with `UserProfile.can_override_stock` get the `warn` flow instead). Products with `track_stock=False` are never checked. Orders accepted with shortages record it in the status history comment
 - Stock decremented on order **creation**, restored on **cancellation**
 - `Order.order_number` → `NV-00000001` format (sequential, not UUID)
+- **Numbering** (NV, HR, auto CUIT) uses `NumberSequence` rows (`order_number`, `route_number`, `customer_auto_cuit`) locked with `select_for_update` inside the model's `save()` transaction: concurrent creations never collide and a rolled-back creation doesn't consume a number. Numbers already taken (e.g. entered manually) are skipped; a missing row is seeded from the current max. Tests: `apps/orders/test_numbering.py` (includes a multi-thread test)
 - `DeliveryRoute.route_number` → `HR-00000001` format
 - `Customer.cuit` auto-fills as `00-XXXXXXXX-0` (incrementing, unique) if left blank
 - An order can only appear on one non-cancelled delivery route at a time

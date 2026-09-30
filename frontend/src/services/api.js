@@ -92,6 +92,7 @@ export const priceListsApi = {
 export const ordersApi = {
   list: (params) => api.get('/orders/', { params }),
   get: (id) => api.get(`/orders/${id}/`),
+  today: (customer) => api.get('/orders/today/', { params: { customer } }),
   create: (data) => api.post('/orders/', data),
   update: (id, data) => api.patch(`/orders/${id}/`, data),
   deliver: (id, data) => api.post(`/orders/${id}/deliver/`, data),
@@ -146,7 +147,8 @@ export const paymentsApi = {
   create: (data) => api.post('/payments/', data),
   approve: (id, data) => api.post(`/payments/${id}/approve/`, data),
   reject: (id, data) => api.post(`/payments/${id}/reject/`, data),
-  refund: (id) => api.post(`/payments/${id}/refund/`),
+  refund: (id, data) => api.post(`/payments/${id}/refund/`, data),
+  markReviewed: (id) => api.post(`/payments/${id}/mark_reviewed/`),
   stats: () => api.get('/payments/stats/'),
 }
 

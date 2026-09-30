@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Upload, X, Save, Settings } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Upload, X, Save, Settings, Package, CreditCard, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useConfig } from '../context/ConfigContext'
 import api from '../services/api'
 
@@ -121,7 +121,113 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+
+        <PolicySettings />
       </div>
     </>
+  )
+}
+
+const POLICY_GROUPS = [
+  {
+    field: 'stock_policy', icon: Package, title: 'Pedidos sin stock suficiente',
+    footnote: 'Los productos con "Controlar stock" desactivado nunca se validan, sin importar esta opción.',
+    options: [
+      { value: 'allow', label: 'Permitir sin stock', help: 'Los pedidos se registran aunque no haya stock; el stock puede quedar negativo.' },
+      { value: 'warn', label: 'Avisar y pedir confirmación', help: 'Si falta stock se muestra el detalle y el usuario puede confirmar el pedido igual.' },
+      { value: 'block', label: 'Bloquear pedidos sin stock', help: 'Si falta stock el pedido se rechaza. Solo los usuarios habilitados ("Puede confirmar sin stock") pueden confirmarlo.' },
+    ],
+  },
+  {
+    field: 'overpayment_policy', icon: CreditCard, title: 'Pagos mayores al saldo del pedido',
+    footnote: 'Se controla al registrar el pago y otra vez al aprobarlo.',
+    options: [
+      { value: 'allow', label: 'Permitir', help: 'El excedente queda como saldo a favor del cliente y se anota en el pago.' },
+      { value: 'warn', label: 'Avisar y pedir confirmación', help: 'Se muestra cuánto excede el saldo y el usuario puede confirmar igual.' },
+      { value: 'block', label: 'Bloquear', help: 'No se aceptan pagos que superen el saldo pendiente.' },
+    ],
+  },
+  {
+    field: 'cancelled_order_payments', icon: RotateCcw, title: 'Pagos aprobados de pedidos anulados',
+    footnote: 'Los pagos pendientes de un pedido anulado se rechazan siempre.',
+    options: [
+      { value: 'keep', label: 'Dejar como están', help: 'Los pagos aprobados se conservan sin cambios.' },
+      { value: 'review', label: 'Marcar para revisión', help: 'Quedan marcados en Pagos para decidir si se reembolsan o se conservan.' },
+      { value: 'refund', label: 'Reembolsar automáticamente', help: 'Al anular el pedido, sus pagos aprobados pasan a reembolsados.' },
+    ],
+  },
+  {
+    field: 'payment_approval', icon: ShieldCheck, title: 'Quién aprueba pagos',
+    footnote: 'Aplica a aprobar, rechazar y reembolsar. Registrar pagos sigue dependiendo del permiso de la sección Pagos.',
+    options: [
+      { value: 'section', label: 'Cualquier usuario con escritura en Pagos', help: 'Comportamiento estándar según los permisos por sección.' },
+      { value: 'restricted', label: 'Solo usuarios habilitados', help: 'Solo superusuarios y usuarios con "Puede aprobar pagos".' },
+    ],
+  },
+]
+
+function PolicySettings() {
+  const [config, setConfig] = useState(null)
+
+  useEffect(() => {
+    api.get('/users/config/').then(r => setConfig(r.data)).catch(() => setConfig({}))
+  }, [])
+
+  if (config === null) return <div className="loading" style={{ minHeight: 60 }}><div className="spinner" /></div>
+  return POLICY_GROUPS.map(group => (
+    <PolicyCard key={group.field} group={group} initial={config[group.field] || group.options[0].value} />
+  ))
+}
+
+function PolicyCard({ group, initial }) {
+  const [value, setValue] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
+  const Icon = group.icon
+
+  const save = async (next) => {
+    const previous = value
+    setValue(next); setSaving(true); setMessage(null)
+    try {
+      await api.patch('/users/config/', { [group.field]: next })
+      setMessage({ type: 'success', text: 'Guardado.' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (e) {
+      setValue(previous)
+      setMessage({ type: 'danger', text: e.response?.data?.error || 'Error al guardar' })
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 600, marginTop: 20 }}>
+      <div style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <Icon size={16} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{group.title}</span>
+        </div>
+
+        {message && <div className={`alert alert-${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {group.options.map(o => (
+            <label key={o.value} style={{
+              display: 'flex', gap: 10, padding: 12, borderRadius: 8, cursor: saving ? 'wait' : 'pointer',
+              border: `1px solid ${value === o.value ? 'var(--accent)' : 'var(--border)'}`,
+              background: value === o.value ? 'var(--accent-glow)' : 'transparent',
+            }}>
+              <input type="radio" name={group.field} value={o.value} checked={value === o.value}
+                disabled={saving} onChange={() => save(o.value)}
+                style={{ accentColor: 'var(--accent)', marginTop: 2 }} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{o.label}</div>
+                <div className="text-muted text-sm">{o.help}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        {group.footnote && <p className="text-muted text-sm" style={{ marginTop: 12 }}>{group.footnote}</p>}
+      </div>
+    </div>
   )
 }

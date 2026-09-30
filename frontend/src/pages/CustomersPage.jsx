@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ordersApi, priceListsApi, productsApi, zonesApi } from '../services/api'
-import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package, Map, MapPin } from 'lucide-react'
+import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package, Map, MapPin, ToggleLeft, ToggleRight } from 'lucide-react'
 import MapPicker from '../components/MapPicker'
 
-const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', zone: '', latitude: '', longitude: '', price_list: '', priority: 5 }
+const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', zone: '', latitude: '', longitude: '', price_list: '', priority: 5, is_active: true }
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([])
@@ -11,6 +11,7 @@ export default function CustomersPage() {
   const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('active') // 'active' | 'inactive' | 'all'
   const [modal, setModal] = useState(null)
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(emptyCustomer)
@@ -37,8 +38,11 @@ export default function CustomersPage() {
 
   const load = () => {
     setLoading(true)
+    const params = { search }
+    if (filterStatus === 'all') params.all = 1
+    else if (filterStatus === 'inactive') params.inactive = 1
     Promise.all([
-      ordersApi.customers({ search }),
+      ordersApi.customers(params),
       priceListsApi.list(),
       zonesApi.list(),
     ]).then(([c, pl, z]) => {
@@ -48,12 +52,12 @@ export default function CustomersPage() {
     }).finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [search])
+  useEffect(() => { load() }, [search, filterStatus])
 
   const openCreate = () => { setForm(emptyCustomer); setError(''); setModal('create') }
   const openEdit = (c) => {
     setSelected(c)
-    setForm({ name: c.name, cuit: c.cuit ?? '', email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', zone: c.zone ?? '', latitude: c.latitude ?? '', longitude: c.longitude ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5 })
+    setForm({ name: c.name, cuit: c.cuit ?? '', email: c.email ?? '', phone: c.phone, address: c.address, localidad: c.localidad ?? '', zone: c.zone ?? '', latitude: c.latitude ?? '', longitude: c.longitude ?? '', price_list: c.price_list ?? '', priority: c.priority ?? 5, is_active: c.is_active ?? true })
     setError('')
     setModal('edit')
   }
@@ -183,6 +187,13 @@ export default function CustomersPage() {
               <Search className="search-icon" size={15} />
               <input className="form-input" placeholder="Buscar por nombre o email..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[['active', 'Activos'], ['inactive', 'Inactivos'], ['all', 'Todos']].map(([val, label]) => (
+                <button key={val} className={`btn btn-sm ${filterStatus === val ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setFilterStatus(val)}>{label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -193,6 +204,7 @@ export default function CustomersPage() {
                 <thead>
                   <tr>
                     <th>Nombre</th>
+                    <th>Estado</th>
                     <th>CUIT</th>
                     <th>Email</th>
                     <th>Teléfono</th>
@@ -202,7 +214,7 @@ export default function CustomersPage() {
                     <th>Lista de precios</th>
                     <th>Pedidos</th>
                     <th>Registrado</th>
-                    <th style={{ width: 80 }}></th>
+                    <th style={{ width: 100 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,8 +222,14 @@ export default function CustomersPage() {
                     <tr><td colSpan={7}><div className="empty-state"><Users className="empty-state-icon" /><div className="empty-state-title">Sin clientes</div></div></td></tr>
                   )}
                   {customers.map(c => (
-                    <tr key={c.id}>
+                    <tr key={c.id} style={{ opacity: c.is_active ? 1 : 0.6 }}>
                       <td style={{ fontWeight: 500 }}>{c.name}</td>
+                      <td>
+                        {c.is_active
+                          ? <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--green)', background: 'var(--green-dim)', padding: '2px 7px', borderRadius: 100 }}>Activo</span>
+                          : <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--red)', background: 'var(--red-dim)', padding: '2px 7px', borderRadius: 100 }}>Inactivo</span>
+                        }
+                      </td>
                       <td><span className="mono text-sm">{c.cuit || '–'}</span></td>
                       <td className="text-muted">{c.email || '–'}</td>
                       <td className="text-muted">{c.phone || '–'}</td>
@@ -245,6 +263,17 @@ export default function CustomersPage() {
                         <div className="flex gap-2">
                           <button className="btn btn-ghost btn-sm" onClick={() => openProductModal(c)} title="Productos habilitados" disabled={loadingPM}><Package size={13} /></button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Editar"><Edit2 size={13} /></button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            title={c.is_active ? 'Desactivar' : 'Activar'}
+                            style={{ color: c.is_active ? 'var(--green)' : 'var(--text-muted)' }}
+                            onClick={async () => {
+                              await ordersApi.updateCustomer(c.id, { is_active: !c.is_active })
+                              load()
+                            }}
+                          >
+                            {c.is_active ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -335,6 +364,16 @@ export default function CustomersPage() {
                   <option value="">Sin lista (precio base)</option>
                   {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name} — ×{parseFloat(pl.multiplier).toFixed(4)}</option>)}
                 </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
+                    style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                  <span className="form-label" style={{ margin: 0 }}>Cliente activo</span>
+                </label>
+                <span className="text-muted text-xs" style={{ marginTop: 4, display: 'block' }}>
+                  Los clientes inactivos no aparecen al crear nuevos pedidos
+                </span>
               </div>
             </div>
             <div className="modal-footer">

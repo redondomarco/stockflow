@@ -31,7 +31,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'sku', 'description', 'category', 'category_name',
-            'supplier', 'supplier_name', 'price', 'cost', 'stock', 'stock_min',
+            'supplier', 'supplier_name', 'price', 'cost', 'stock', 'stock_min', 'track_stock',
             'fixed_price', 'image', 'sort_order',
             'is_bundle', 'bundle_child', 'bundle_child_name', 'bundle_child_sku',
             'bundle_quantity', 'bundle_unit_weight', 'bundle_unit_price',

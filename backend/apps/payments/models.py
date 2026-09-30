@@ -27,6 +27,7 @@ class Payment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     transaction_id = models.CharField(max_length=200, blank=True)
     notes = models.TextField(blank=True)
+    needs_review = models.BooleanField(default=False, help_text='Pago aprobado de un pedido anulado, pendiente de revisión')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.permissions import SectionPermission
 from django.db import transaction
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
@@ -20,6 +21,11 @@ from .serializers import (
 )
 from apps.products.models import Product, StockMovement
 from apps.products.serializers import ProductSerializer
+from .services import (
+    BusinessRuleError, get_orderable_customer, parse_amount, price_order_items,
+    enforce_stock_policy, add_order_items, remove_order_items, is_confirmed,
+)
+from apps.payments.services import handle_order_cancellation
 
 
 VALID_TRANSITIONS = {
@@ -128,13 +134,22 @@ class PriceListViewSet(viewsets.ModelViewSet):
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
-    queryset = Customer.objects.all().order_by("name")
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'customers'
     pagination_class = None
     search_fields = ['name', 'email', 'phone']
     ordering = ['name']
+
+    def get_queryset(self):
+        qs = Customer.objects.all().order_by('name')
+        show_all = self.request.query_params.get('all')
+        show_inactive = self.request.query_params.get('inactive')
+        if show_inactive:
+            qs = qs.filter(is_active=False)
+        elif not show_all:
+            qs = qs.filter(is_active=True)
+        return qs
 
     @action(detail=True, methods=['get', 'post'])
     def products(self, request, pk=None):
@@ -240,11 +255,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="clientes.csv"'
         response.write('﻿')
         writer = csv.writer(response)
-        writer.writerow(['nombre', 'cuit', 'email', 'telefono', 'direccion', 'localidad', 'zona', 'latitud', 'longitud', 'prioridad', 'lista_de_precios', 'productos_habilitados'])
+        writer.writerow(['nombre', 'activo', 'cuit', 'email', 'telefono', 'direccion', 'localidad', 'zona', 'latitud', 'longitud', 'prioridad', 'lista_de_precios', 'productos_habilitados'])
         for c in customers:
             skus = '|'.join(p.sku for p in c.enabled_products.all().order_by('sku'))
             writer.writerow([
-                c.name, c.cuit or '', c.email or '', c.phone, c.address, c.localidad,
+                c.name, 'si' if c.is_active else 'no',
+                c.cuit or '', c.email or '', c.phone, c.address, c.localidad,
                 c.zone.name if c.zone else '',
                 c.latitude or '', c.longitude or '',
                 c.priority,
@@ -272,6 +288,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
         for i, row in enumerate(reader, start=2):
             name = (row.get('nombre') or '').strip()
+            activo_raw = (row.get('activo') or 'si').strip().lower()
+            is_active = activo_raw not in ('no', 'false', '0')
             cuit = (row.get('cuit') or '').strip() or None
             email = (row.get('email') or '').strip() or None
             phone = (row.get('telefono') or '').strip()
@@ -311,6 +329,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 name=name, cuit=cuit, email=email, phone=phone,
                 address=address, localidad=localidad,
                 zone=zone, latitude=latitude, longitude=longitude,
+                is_active=is_active,
             )
 
             if skus_raw:
@@ -335,54 +354,34 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         data = request.data
-        items_data = data.get('items', [])
+        try:
+            with transaction.atomic():
+                customer = get_orderable_customer(data.get('customer'))
+                shipping_cost = parse_amount(data.get('shipping_cost'), 'costo de envío')
+                discount = parse_amount(data.get('discount'), 'descuento')
+                lines, shortages = price_order_items(customer, data.get('items'))
+                stock_note = enforce_stock_policy(request.user, shortages, is_confirmed(data))
 
-        if not items_data:
-            return Response({'error': 'El pedido debe tener al menos un ítem'}, status=400)
+                order = Order.objects.create(
+                    customer=customer,
+                    shipping_address=data.get('shipping_address', ''),
+                    shipping_cost=shipping_cost,
+                    discount=discount,
+                    notes=data.get('notes', ''),
+                    created_by=request.user,
+                )
+                add_order_items(order, lines, reason=f'Pedido #{order.order_number}')
+                order.calculate_totals()
 
-        with transaction.atomic():
-            order = Order.objects.create(
-                customer_id=data['customer'],
-                shipping_address=data.get('shipping_address', ''),
-                shipping_cost=data.get('shipping_cost', 0),
-                discount=data.get('discount', 0),
-                notes=data.get('notes', ''),
-                created_by=request.user,
-            )
-
-            for item_data in items_data:
-                product = Product.objects.select_for_update().get(id=item_data['product'])
-                quantity = int(item_data['quantity'])
-
-                OrderItem.objects.create(
+                OrderStatusHistory.objects.create(
                     order=order,
-                    product=product,
-                    quantity=quantity,
-                    unit_price=item_data.get('unit_price', product.price),
+                    old_status='',
+                    new_status='pending',
+                    changed_by=request.user,
+                    comment='. '.join(filter(None, ['Pedido creado', stock_note])),
                 )
-
-                stock_before = product.stock
-                product.stock -= quantity
-                product.save()
-
-                StockMovement.objects.create(
-                    product=product,
-                    movement_type='out',
-                    quantity=quantity,
-                    stock_before=stock_before,
-                    stock_after=product.stock,
-                    reason=f'Pedido #{order.order_number}',
-                )
-
-            order.calculate_totals()
-
-            OrderStatusHistory.objects.create(
-                order=order,
-                old_status='',
-                new_status='pending',
-                changed_by=request.user,
-                comment='Pedido creado',
-            )
+        except BusinessRuleError as e:
+            return e.response()
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
@@ -395,85 +394,53 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
-        with transaction.atomic():
-            # Track changes for history
-            FIELD_LABELS = {
-                'shipping_address': 'dirección',
-                'shipping_cost': 'costo de envío',
-                'discount': 'descuento',
-                'notes': 'notas',
-            }
-            changed_fields = []
-            for field in FIELD_LABELS:
-                if field in request.data and str(request.data[field]) != str(getattr(order, field)):
-                    changed_fields.append(FIELD_LABELS[field])
-                    setattr(order, field, request.data[field])
+        FIELD_LABELS = {
+            'shipping_address': 'dirección',
+            'shipping_cost': 'costo de envío',
+            'discount': 'descuento',
+            'notes': 'notas',
+        }
+        try:
+            with transaction.atomic():
+                changed_fields = []
+                for field, label in FIELD_LABELS.items():
+                    if field not in request.data:
+                        continue
+                    value = request.data[field]
+                    if field in ('shipping_cost', 'discount'):
+                        value = parse_amount(value, label)
+                    if str(value) != str(getattr(order, field)):
+                        changed_fields.append(label)
+                        setattr(order, field, value)
 
-            items_edited = False
-            if order.status == 'pending' and 'items' in request.data:
-                items_data = request.data['items']
-                if not items_data:
-                    return Response({'error': 'El pedido debe tener al menos un ítem'}, status=400)
+                items_edited = False
+                stock_note = ''
+                if order.status == 'pending' and 'items' in request.data:
+                    # Primero se devuelve el stock de los ítems actuales, así la
+                    # validación de disponibilidad cuenta lo que este pedido ya reservaba.
+                    remove_order_items(order, reason=f'Edición pedido #{order.order_number} — restauración')
+                    lines, shortages = price_order_items(order.customer, request.data['items'])
+                    stock_note = enforce_stock_policy(request.user, shortages, is_confirmed(request.data))
+                    add_order_items(order, lines, reason=f'Edición pedido #{order.order_number}')
+                    items_edited = True
 
-                # Restore stock from old items
-                for item in order.items.all():
-                    product = Product.objects.select_for_update().get(id=item.product_id)
-                    stock_before = product.stock
-                    product.stock += item.quantity
-                    product.save()
-                    StockMovement.objects.create(
-                        product=product,
-                        movement_type='in',
-                        quantity=item.quantity,
-                        stock_before=stock_before,
-                        stock_after=product.stock,
-                        reason=f'Edición pedido #{order.order_number} — restauración',
-                    )
+                order.subtotal = sum(it.subtotal for it in OrderItem.objects.filter(order=order))
+                order.save()  # Order.save recalcula total
 
-                items_edited = True
-                order.items.all().delete()
-
-                for item_data in items_data:
-                    product = Product.objects.select_for_update().get(id=item_data['product'])
-                    quantity = int(item_data['quantity'])
-                    OrderItem.objects.create(
+                parts = []
+                if items_edited:
+                    parts.append('ítems actualizados')
+                parts.extend(changed_fields)
+                if parts:
+                    OrderStatusHistory.objects.create(
                         order=order,
-                        product=product,
-                        quantity=quantity,
-                        unit_price=item_data.get('unit_price', product.price),
+                        old_status=order.status,
+                        new_status=order.status,
+                        changed_by=request.user,
+                        comment='. '.join(filter(None, [f'Pedido editado: {", ".join(parts)}', stock_note])),
                     )
-                    stock_before = product.stock
-                    product.stock -= quantity
-                    product.save()
-                    StockMovement.objects.create(
-                        product=product,
-                        movement_type='out',
-                        quantity=quantity,
-                        stock_before=stock_before,
-                        stock_after=product.stock,
-                        reason=f'Edición pedido #{order.order_number}',
-                    )
-
-            # Recalculate totals using fresh DB query
-            from decimal import Decimal
-            subtotal = sum(it.subtotal for it in OrderItem.objects.filter(order=order))
-            order.subtotal = subtotal
-            order.total = subtotal + Decimal(str(order.shipping_cost)) - Decimal(str(order.discount))
-            order.save()
-
-            # History entry
-            parts = []
-            if items_edited:
-                parts.append('ítems actualizados')
-            parts.extend(changed_fields)
-            if parts:
-                OrderStatusHistory.objects.create(
-                    order=order,
-                    old_status=order.status,
-                    new_status=order.status,
-                    changed_by=request.user,
-                    comment=f'Pedido editado: {", ".join(parts)}',
-                )
+        except BusinessRuleError as e:
+            return e.response()
 
         order.refresh_from_db()
         return Response(OrderSerializer(order).data)
@@ -547,28 +514,31 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
-        old_status = order.status
-        order.status = new_status
-        order.save()
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            # Revalidar con la fila bloqueada: otro request pudo cambiar el estado.
+            if new_status not in VALID_TRANSITIONS.get(order.status, []):
+                return Response({'error': f'El pedido ya está {order.get_status_display().lower()}.'}, status=400)
 
-        OrderStatusHistory.objects.create(
-            order=order,
-            old_status=old_status,
-            new_status=new_status,
-            changed_by=request.user,
-            comment=comment,
-        )
+            old_status = order.status
+            order.status = new_status
+            order.save()
 
-        if new_status == 'cancelled':
-            with transaction.atomic():
-                for item in order.items.all():
+            payments_note = ''
+            if new_status == 'cancelled':
+                items = list(order.items.all())
+                products = {
+                    p.id: p for p in Product.objects.select_for_update()
+                    .filter(id__in=[it.product_id for it in items]).order_by('id')
+                }
+                for item in items:
                     undelivered = item.quantity - item.delivered_quantity
                     if undelivered <= 0:
                         continue
-                    product = item.product
+                    product = products[item.product_id]
                     stock_before = product.stock
                     product.stock += undelivered
-                    product.save()
+                    product.save(update_fields=['stock', 'updated_at'])
                     StockMovement.objects.create(
                         product=product,
                         movement_type='in',
@@ -577,8 +547,43 @@ class OrderViewSet(viewsets.ModelViewSet):
                         stock_after=product.stock,
                         reason=f'Anulación pedido #{order.order_number}',
                     )
+                payments_note = handle_order_cancellation(order)
+
+            OrderStatusHistory.objects.create(
+                order=order,
+                old_status=old_status,
+                new_status=new_status,
+                changed_by=request.user,
+                comment='. '.join(filter(None, [comment, payments_note])),
+            )
 
         return Response(OrderSerializer(order).data)
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        """Pedidos no anulados cargados hoy (hora local) para un cliente: ?customer=<id>."""
+        try:
+            customer_id = int(request.query_params.get('customer', ''))
+        except ValueError:
+            return Response({'error': 'Indicá el cliente (?customer=<id>).'}, status=400)
+        orders = (
+            Order.objects.filter(customer_id=customer_id, created_at__date=timezone.localdate())
+            .exclude(status='cancelled')
+            .select_related('created_by')
+            .order_by('created_at')
+        )
+        return Response([
+            {
+                'id': o.id,
+                'order_number': o.order_number,
+                'created_at': o.created_at,
+                'created_by': o.created_by.username if o.created_by else None,
+                'status': o.status,
+                'status_display': o.get_status_display(),
+                'total': float(o.total),
+            }
+            for o in orders
+        ])
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -622,7 +627,8 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = DeliveryRouteWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        route = serializer.save()
+        with transaction.atomic():
+            route = serializer.save()
         return Response(DeliveryRouteSerializer(route).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'])

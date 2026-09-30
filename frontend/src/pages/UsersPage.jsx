@@ -17,7 +17,7 @@ const LEVEL_COLORS = { hidden: 'var(--red)', read: 'var(--yellow)', write: 'var(
 
 const defaultPermissions = () => Object.fromEntries(SECTIONS.map(s => [s.key, 'write']))
 
-const emptyForm = { username: '', email: '', password: '', first_name: '', last_name: '', is_active: true, is_driver: false, permissions: defaultPermissions() }
+const emptyForm = { username: '', email: '', password: '', first_name: '', last_name: '', is_active: true, is_driver: false, can_override_stock: false, can_approve_payments: false, permissions: defaultPermissions() }
 
 export default function UsersPage() {
   const [users, setUsers] = useState([])
@@ -54,6 +54,8 @@ export default function UsersPage() {
       last_name: u.last_name || '',
       is_active: u.is_active,
       is_driver: u.is_driver || false,
+      can_override_stock: u.can_override_stock || false,
+      can_approve_payments: u.can_approve_payments || false,
       permissions: { ...defaultPermissions(), ...u.permissions },
     })
     setError('')
@@ -288,6 +290,22 @@ export default function UsersPage() {
                       style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
                     <label htmlFor="is_driver_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
                       Repartidor <span className="text-muted" style={{ fontWeight: 400 }}>(aparece en hojas de ruta)</span>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input id="can_override_stock_toggle" type="checkbox" checked={!!form.can_override_stock}
+                      onChange={e => setForm(p => ({ ...p, can_override_stock: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <label htmlFor="can_override_stock_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                      Puede confirmar sin stock <span className="text-muted" style={{ fontWeight: 400 }}>(cuando se bloquean pedidos sin stock)</span>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input id="can_approve_payments_toggle" type="checkbox" checked={!!form.can_approve_payments}
+                      onChange={e => setForm(p => ({ ...p, can_approve_payments: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <label htmlFor="can_approve_payments_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                      Puede aprobar pagos <span className="text-muted" style={{ fontWeight: 400 }}>(cuando la aprobación está restringida)</span>
                     </label>
                   </div>
                 </div>

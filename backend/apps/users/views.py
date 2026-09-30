@@ -144,9 +144,25 @@ class UserViewSet(viewsets.ModelViewSet):
 class SystemConfigView(APIView):
     permission_classes = [IsAuthenticated]
 
+    # Campos de política: nombre -> choices válidos del modelo
+    POLICY_FIELDS = {
+        'stock_policy': SystemConfig.STOCK_POLICY_CHOICES,
+        'overpayment_policy': SystemConfig.OVERPAYMENT_POLICY_CHOICES,
+        'cancelled_order_payments': SystemConfig.CANCELLED_ORDER_PAYMENTS_CHOICES,
+        'payment_approval': SystemConfig.PAYMENT_APPROVAL_CHOICES,
+    }
+
+    @classmethod
+    def _serialize(cls, config):
+        return {
+            'logo_svg': config.logo_svg,
+            'logo_width': config.logo_width,
+            'pdf_logo_width': config.pdf_logo_width,
+            **{field: getattr(config, field) for field in cls.POLICY_FIELDS},
+        }
+
     def get(self, request):
-        config = SystemConfig.get()
-        return Response({'logo_svg': config.logo_svg, 'logo_width': config.logo_width, 'pdf_logo_width': config.pdf_logo_width})
+        return Response(self._serialize(SystemConfig.get()))
 
     def patch(self, request):
         if not request.user.is_superuser:
@@ -158,5 +174,12 @@ class SystemConfigView(APIView):
             config.logo_width = int(request.data['logo_width'])
         if 'pdf_logo_width' in request.data:
             config.pdf_logo_width = int(request.data['pdf_logo_width'])
+        for field, choices in self.POLICY_FIELDS.items():
+            if field not in request.data:
+                continue
+            value = request.data[field]
+            if value not in dict(choices):
+                return Response({'error': f'Valor inválido para {field}: "{value}".'}, status=400)
+            setattr(config, field, value)
         config.save()
-        return Response({'logo_svg': config.logo_svg, 'logo_width': config.logo_width, 'pdf_logo_width': config.pdf_logo_width})
+        return Response(self._serialize(config))

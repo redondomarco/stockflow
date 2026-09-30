@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { productsApi } from '../services/api'
 import { Plus, Search, Edit2, ArrowUpDown, X, Package, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react'
 
-const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, fixed_price: false, is_bundle: false, bundle_child: '', bundle_quantity: '', bundle_unit_weight: '', bundle_unit_price: '', is_active: true }
+const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, track_stock: true, fixed_price: false, is_bundle: false, bundle_child: '', bundle_quantity: '', bundle_unit_weight: '', bundle_unit_price: '', is_active: true }
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([])
@@ -355,6 +355,18 @@ export default function ProductsPage() {
                     />
                     <label htmlFor="fixed_price_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
                       Precio fijo <span className="text-muted" style={{ fontWeight: 400 }}>(no aplica lista de precios)</span>
+                    </label>
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
+                    <input
+                      id="track_stock_toggle"
+                      type="checkbox"
+                      checked={!!form.track_stock}
+                      onChange={e => setForm(p => ({ ...p, track_stock: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="track_stock_toggle" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                      Controlar stock <span className="text-muted" style={{ fontWeight: 400 }}>(validar disponibilidad en pedidos)</span>
                     </label>
                   </div>
                   {modal === 'edit' && (

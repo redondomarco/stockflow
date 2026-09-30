@@ -3,6 +3,30 @@ import { useNavigate } from 'react-router-dom'
 import { ordersApi, paymentsApi, productsApi } from '../services/api'
 import { Plus, X, ChevronRight, CreditCard, Search, Truck, Edit2 } from 'lucide-react'
 
+// Faltantes devueltos por el backend según la política de stock (409 aviso / 400 bloqueo)
+function StockIssue({ issue }) {
+  if (!issue) return null
+  return (
+    <div className={`alert ${issue.canConfirm ? 'alert-warning' : 'alert-danger'}`}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{issue.message}</div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+        {issue.shortages.map(s => (
+          <li key={s.product}>
+            <span className="mono">{s.sku}</span> {s.name}: pedido <strong>{s.requested}</strong>, disponible <strong>{s.available}</strong>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// Separa un error de stock (con faltantes) de un error común
+function parseOrderError(e) {
+  const data = e.response?.data
+  if (data?.shortages) return { stockIssue: { message: data.error, shortages: data.shortages, canConfirm: !!data.can_confirm } }
+  return { error: data?.error || JSON.stringify(data) || 'Error' }
+}
+
 function CustomerCombobox({ customers, value, onChange }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
@@ -137,6 +161,10 @@ export default function OrdersPage() {
   const [paymentForm, setPaymentForm] = useState({ payment_method: 'transfer', amount: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [stockIssue, setStockIssue] = useState(null)
+  const [overpayWarning, setOverpayWarning] = useState(false)
+  const [todayOrders, setTodayOrders] = useState([])
+  const selectedCustomerRef = useRef('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerProducts, setPickerProducts] = useState([])
   const [pickerSelected, setPickerSelected] = useState(new Set())
@@ -158,7 +186,8 @@ export default function OrdersPage() {
     setOrderForm({ customer: '', shipping_cost: 0, discount: 0, notes: '', shipping_address: '' })
     setCustomerProducts([])
     setActiveMultiplier(null)
-    setError('')
+    setError(''); setStockIssue(null)
+    setTodayOrders([]); selectedCustomerRef.current = ''
     setModal('create')
   }
 
@@ -167,7 +196,14 @@ export default function OrdersPage() {
     const c = customers.find(c => String(c.id) === String(customerId))
     setActiveMultiplier(c?.price_list_multiplier ? { name: c.price_list_name, value: parseFloat(c.price_list_multiplier) } : null)
     setCustomerProducts([])
+    setStockIssue(null)
+    setTodayOrders([])
+    selectedCustomerRef.current = customerId
     if (!customerId) return
+    // Aviso si el cliente ya tiene pedidos hoy; se ignora la respuesta si cambió el cliente mientras tanto
+    ordersApi.today(customerId)
+      .then(r => { if (selectedCustomerRef.current === customerId) setTodayOrders(r.data || []) })
+      .catch(() => {})
     setLoadingProducts(true)
     try {
       const res = await ordersApi.getCustomerProducts(customerId)
@@ -175,29 +211,29 @@ export default function OrdersPage() {
     } finally { setLoadingProducts(false) }
   }
 
-  const updateQty = (productId, qty) =>
+  const updateQty = (productId, qty) => {
+    setStockIssue(null)
     setCustomerProducts(prev => prev.map(p => p.id === productId ? { ...p, qty: Math.max(0, qty || 0) } : p))
+  }
 
   const effectiveMult = (p) => (p.fixed_price ? 1 : (activeMultiplier?.value || 1))
 
   const computeSubtotal = () =>
     customerProducts.reduce((acc, p) => acc + parseFloat(p.price) * effectiveMult(p) * (p.qty || 0), 0)
 
-  const createOrder = async () => {
-    setSaving(true); setError('')
+  // El precio lo calcula el backend; acá solo se muestra como referencia.
+  const createOrder = async (confirmStock = false) => {
+    setSaving(true); setError(''); setStockIssue(null)
     try {
       const items = customerProducts
         .filter(p => p.qty > 0)
-        .map(p => ({
-          product: p.id,
-          quantity: p.qty,
-          unit_price: parseFloat((parseFloat(p.price) * effectiveMult(p)).toFixed(2)),
-        }))
+        .map(p => ({ product: p.id, quantity: p.qty }))
       if (!items.length) { setError('Seleccioná al menos un producto'); setSaving(false); return }
-      await ordersApi.create({ ...orderForm, items })
+      await ordersApi.create({ ...orderForm, items, confirm_stock: confirmStock })
       setModal(null); load()
     } catch (e) {
-      setError(e.response?.data?.error || JSON.stringify(e.response?.data) || 'Error')
+      const parsed = parseOrderError(e)
+      setError(parsed.error || ''); setStockIssue(parsed.stockIssue || null)
     } finally { setSaving(false) }
   }
 
@@ -210,7 +246,7 @@ export default function OrdersPage() {
       discount: parseFloat(o.discount || 0),
       notes: o.notes || '',
     })
-    setError('')
+    setError(''); setStockIssue(null)
 
     if (o.status === 'pending') {
       setEditLoadingProducts(true)
@@ -234,30 +270,29 @@ export default function OrdersPage() {
     setModal('edit-order')
   }
 
-  const updateEditQty = (productId, qty) =>
+  const updateEditQty = (productId, qty) => {
+    setStockIssue(null)
     setEditProducts(prev => prev.map(p => p.id === productId ? { ...p, qty: Math.max(0, qty || 0) } : p))
+  }
 
   const editEffectiveMult = (p) => (p.fixed_price ? 1 : (editMultiplier?.value || 1))
 
-  const submitEditOrder = async () => {
-    setSaving(true); setError('')
+  const submitEditOrder = async (confirmStock = false) => {
+    setSaving(true); setError(''); setStockIssue(null)
     try {
-      const payload = { ...editForm }
+      const payload = { ...editForm, confirm_stock: confirmStock }
       if (selected.status === 'pending') {
         const items = editProducts
           .filter(p => p.qty > 0)
-          .map(p => ({
-            product: p.id,
-            quantity: p.qty,
-            unit_price: parseFloat((parseFloat(p.price) * editEffectiveMult(p)).toFixed(2)),
-          }))
+          .map(p => ({ product: p.id, quantity: p.qty }))
         if (!items.length) { setError('Seleccioná al menos un producto'); setSaving(false); return }
         payload.items = items
       }
       await ordersApi.update(selected.id, payload)
       setModal(null); load()
     } catch (e) {
-      setError(e.response?.data?.error || JSON.stringify(e.response?.data) || 'Error')
+      const parsed = parseOrderError(e)
+      setError(parsed.error || ''); setStockIssue(parsed.stockIssue || null)
     } finally { setSaving(false) }
   }
 
@@ -295,7 +330,7 @@ export default function OrdersPage() {
 
   // ── Cancel ────────────────────────────────────────────────────────
   const cancelOrder = async (o) => {
-    if (!confirm(`¿Anular el pedido ${o.order_number}? El stock no entregado se restaurará.`)) return
+    if (!confirm(`¿Anular el pedido ${o.order_number}? El stock no entregado se restaurará y los pagos pendientes se rechazarán.`)) return
     try {
       await ordersApi.changeStatus(o.id, { status: 'cancelled', comment: 'Anulado por el usuario' })
       load()
@@ -308,17 +343,19 @@ export default function OrdersPage() {
   const openPayment = (o) => {
     setSelected(o)
     setPaymentForm({ payment_method: 'transfer', amount: fmt(o.balance).replace(/\./g, '').replace(',', '.') })
-    setError('')
+    setError(''); setOverpayWarning(false)
     setModal('payment')
   }
 
-  const createPayment = async () => {
-    setSaving(true); setError('')
+  const createPayment = async (confirmOverpayment = false) => {
+    setSaving(true); setError(''); setOverpayWarning(false)
     try {
-      await paymentsApi.create({ order: selected.id, ...paymentForm })
+      await paymentsApi.create({ order: selected.id, ...paymentForm, confirm_overpayment: confirmOverpayment })
       setModal(null); load()
     } catch (e) {
-      setError(e.response?.data?.error || 'Error')
+      const data = e.response?.data
+      setOverpayWarning(data?.code === 'overpayment_warning')
+      setError(data?.error || data?.amount?.[0] || data?.order?.[0] || 'Error')
     } finally { setSaving(false) }
   }
 
@@ -478,6 +515,7 @@ export default function OrdersPage() {
             </div>
             <div className="modal-body">
               {error && <div className="alert alert-danger">{error}</div>}
+              <StockIssue issue={stockIssue} />
               <div className="form-grid">
                 <div className="form-group">
                   <label className="form-label">Cliente *</label>
@@ -486,6 +524,22 @@ export default function OrdersPage() {
                     <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                       <span style={{ background: 'var(--accent-glow)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 4, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>×{activeMultiplier.value.toFixed(4)}</span>
                       <span className="text-muted">Lista: <strong style={{ color: 'var(--text)' }}>{activeMultiplier.name}</strong></span>
+                    </div>
+                  )}
+                  {todayOrders.length > 0 && (
+                    <div className="alert alert-warning" style={{ marginTop: 8, marginBottom: 0, fontSize: 13 }}>
+                      <strong>Este cliente ya tiene {todayOrders.length === 1 ? 'un pedido' : `${todayOrders.length} pedidos`} cargado{todayOrders.length === 1 ? '' : 's'} hoy:</strong>
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                        {todayOrders.map(o => (
+                          <li key={o.id}>
+                            <span className="mono">{o.order_number}</span>
+                            {' — '}{new Date(o.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            {o.created_by && <> por {o.created_by}</>}
+                            {' — '}<span className="mono">${fmt(o.total)}</span>
+                            {' '}<span className="text-muted">({o.status_display})</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
@@ -577,7 +631,11 @@ export default function OrdersPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={createOrder} disabled={saving}>{saving ? 'Guardando...' : 'Crear pedido'}</button>
+              {stockIssue?.canConfirm ? (
+                <button className="btn btn-primary" onClick={() => createOrder(true)} disabled={saving}>{saving ? 'Guardando...' : 'Crear igual sin stock'}</button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => createOrder()} disabled={saving || !!stockIssue}>{saving ? 'Guardando...' : 'Crear pedido'}</button>
+              )}
             </div>
           </div>
         </div>
@@ -596,6 +654,7 @@ export default function OrdersPage() {
             </div>
             <div className="modal-body">
               {error && <div className="alert alert-danger">{error}</div>}
+              <StockIssue issue={stockIssue} />
 
               {/* Cliente (solo lectura) */}
               <div className="form-group">
@@ -679,7 +738,11 @@ export default function OrdersPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={submitEditOrder} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</button>
+              {stockIssue?.canConfirm ? (
+                <button className="btn btn-primary" onClick={() => submitEditOrder(true)} disabled={saving}>{saving ? 'Guardando...' : 'Guardar igual sin stock'}</button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => submitEditOrder()} disabled={saving || !!stockIssue}>{saving ? 'Guardando...' : 'Guardar cambios'}</button>
+              )}
             </div>
           </div>
         </div>
@@ -872,7 +935,7 @@ export default function OrdersPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Monto a cobrar</label>
-                <input className="form-input mono" type="number" value={paymentForm.amount} onChange={e => setPaymentForm(p => ({ ...p, amount: e.target.value }))} />
+                <input className="form-input mono" type="number" value={paymentForm.amount} onChange={e => { setOverpayWarning(false); setPaymentForm(p => ({ ...p, amount: e.target.value })) }} />
               </div>
               <div className="form-group">
                 <label className="form-label">Método de pago</label>
@@ -883,7 +946,11 @@ export default function OrdersPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={createPayment} disabled={saving}>{saving ? '...' : 'Registrar pago'}</button>
+              {overpayWarning ? (
+                <button className="btn btn-primary" onClick={() => createPayment(true)} disabled={saving}>{saving ? '...' : 'Registrar igual'}</button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => createPayment()} disabled={saving}>{saving ? '...' : 'Registrar pago'}</button>
+              )}
             </div>
           </div>
         </div>

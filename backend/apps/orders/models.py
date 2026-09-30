@@ -1,7 +1,52 @@
-from django.db import models
+import re
+from django.db import models, transaction
 from django.contrib.auth.models import User
 from apps.products.models import Product
 from decimal import Decimal
+
+
+def max_numbered(queryset, field, pattern):
+    """Mayor número N entre los valores de `field` con formato `pattern` (regex con un grupo)."""
+    values = queryset.filter(**{f'{field}__regex': pattern}).values_list(field, flat=True)
+    return max((int(re.match(pattern, v).group(1)) for v in values), default=0)
+
+
+class NumberSequence(models.Model):
+    """
+    Contador para numeraciones correlativas (NV, HR, CUIT automático).
+
+    La fila se bloquea con select_for_update hasta el fin de la transacción:
+    dos creaciones simultáneas no pueden obtener el mismo número, y si la
+    transacción falla el número no se consume (no quedan huecos).
+    """
+    name = models.CharField(max_length=30, primary_key=True)
+    last_value = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'Secuencia de numeración'
+        verbose_name_plural = 'Secuencias de numeración'
+
+    def __str__(self):
+        return f'{self.name}: {self.last_value}'
+
+    @classmethod
+    def next_value(cls, name, seed, is_taken):
+        """
+        Devuelve el próximo número de la secuencia `name`.
+        seed(): valor inicial si la secuencia no existe (mayor número ya usado).
+        is_taken(n): True si n ya está en uso (p. ej. cargado a mano); se saltea.
+        """
+        with transaction.atomic():
+            seq = cls.objects.select_for_update().filter(pk=name).first()
+            if seq is None:
+                cls.objects.get_or_create(pk=name, defaults={'last_value': seed()})
+                seq = cls.objects.select_for_update().get(pk=name)
+            value = seq.last_value + 1
+            while is_taken(value):
+                value += 1
+            seq.last_value = value
+            seq.save(update_fields=['last_value'])
+            return value
 
 
 class PriceList(models.Model):
@@ -46,6 +91,7 @@ class Customer(models.Model):
     price_list = models.ForeignKey(PriceList, on_delete=models.SET_NULL, null=True, blank=True, related_name='customers')
     enabled_products = models.ManyToManyField(Product, blank=True, related_name='enabled_for_customers')
     priority = models.PositiveSmallIntegerField(default=5, help_text='Prioridad de entrega del 1 (más urgente) al 10')
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -54,22 +100,26 @@ class Customer(models.Model):
         ordering = ['name']
 
     def save(self, *args, **kwargs):
-        if not self.cuit:
-            self.cuit = self._next_auto_cuit()
-        super().save(*args, **kwargs)
+        # Número y registro en la misma transacción: el contador queda bloqueado hasta el INSERT.
+        with transaction.atomic():
+            if not self.cuit:
+                self.cuit = self._next_auto_cuit()
+            super().save(*args, **kwargs)
+
+    AUTO_CUIT_PATTERN = r'^00-(\d+)-0$'
+
+    @classmethod
+    def _format_auto_cuit(cls, n):
+        return f"00-{n:08d}-0"
 
     @classmethod
     def _next_auto_cuit(cls):
-        import re
-        existing = cls.objects.filter(
-            cuit__startswith='00-', cuit__endswith='-0'
-        ).values_list('cuit', flat=True)
-        max_num = 0
-        for cuit in existing:
-            m = re.match(r'^00-(\d+)-0$', cuit)
-            if m:
-                max_num = max(max_num, int(m.group(1)))
-        return f"00-{max_num + 1:08d}-0"
+        n = NumberSequence.next_value(
+            'customer_auto_cuit',
+            seed=lambda: max_numbered(cls.objects.all(), 'cuit', cls.AUTO_CUIT_PATTERN),
+            is_taken=lambda n: cls.objects.filter(cuit=cls._format_auto_cuit(n)).exists(),
+        )
+        return cls._format_auto_cuit(n)
 
     def __str__(self):
         return f"{self.name} ({self.email})"
@@ -105,22 +155,22 @@ class Order(models.Model):
         return f"Pedido #{self.order_number}"
 
     def save(self, *args, **kwargs):
-        if not self.order_number:
-            self.order_number = self._next_order_number()
         self.total = self.subtotal + self.shipping_cost - self.discount
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            if not self.order_number:
+                self.order_number = self._next_order_number()
+            super().save(*args, **kwargs)
+
+    NUMBER_PATTERN = r'^NV-(\d+)$'
 
     @classmethod
     def _next_order_number(cls):
-        import re
-        nums = cls.objects.filter(
-            order_number__regex=r'^NV-\d+$'
-        ).values_list('order_number', flat=True)
-        max_num = max(
-            (int(re.match(r'^NV-(\d+)$', n).group(1)) for n in nums),
-            default=0
+        n = NumberSequence.next_value(
+            'order_number',
+            seed=lambda: max_numbered(cls.objects.all(), 'order_number', cls.NUMBER_PATTERN),
+            is_taken=lambda n: cls.objects.filter(order_number=f"NV-{n:08d}").exists(),
         )
-        return f"NV-{max_num + 1:08d}"
+        return f"NV-{n:08d}"
 
     @property
     def amount_paid(self):
@@ -195,21 +245,21 @@ class DeliveryRoute(models.Model):
         return self.route_number
 
     def save(self, *args, **kwargs):
-        if not self.route_number:
-            self.route_number = self._next_route_number()
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            if not self.route_number:
+                self.route_number = self._next_route_number()
+            super().save(*args, **kwargs)
+
+    NUMBER_PATTERN = r'^HR-(\d+)$'
 
     @classmethod
     def _next_route_number(cls):
-        import re
-        nums = cls.objects.filter(
-            route_number__regex=r'^HR-\d+$'
-        ).values_list('route_number', flat=True)
-        max_num = max(
-            (int(re.match(r'^HR-(\d+)$', n).group(1)) for n in nums),
-            default=0
+        n = NumberSequence.next_value(
+            'route_number',
+            seed=lambda: max_numbered(cls.objects.all(), 'route_number', cls.NUMBER_PATTERN),
+            is_taken=lambda n: cls.objects.filter(route_number=f"HR-{n:08d}").exists(),
         )
-        return f"HR-{max_num + 1:08d}"
+        return f"HR-{n:08d}"
 
 
 class DeliveryRouteItem(models.Model):

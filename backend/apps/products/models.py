@@ -43,6 +43,7 @@ class Product(models.Model):
     cost = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0'))])
     stock = models.IntegerField(default=0)
     stock_min = models.PositiveIntegerField(default=5, help_text='Stock mínimo para alertas')
+    track_stock = models.BooleanField(default=True, help_text='Si está desactivado, los pedidos no validan stock disponible')
     fixed_price = models.BooleanField(default=False, help_text='Si está activo, el multiplicador de lista de precios no se aplica')
     image = models.ImageField(upload_to='products/', blank=True, null=True)
     sort_order = models.IntegerField(default=0, help_text='Índice de orden de visualización (menor = primero)')

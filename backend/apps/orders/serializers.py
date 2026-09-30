@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 from django.contrib.auth.models import User
 from .models import PriceList, Customer, Order, OrderItem, OrderStatusHistory, DeliveryRoute, DeliveryRouteItem, Zone
 
@@ -45,7 +46,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def get_last_order_date(self, obj):
         last = obj.orders.exclude(status='cancelled').order_by('-created_at').values('created_at').first()
-        return last['created_at'].date().isoformat() if last else None
+        return timezone.localtime(last['created_at']).date().isoformat() if last else None
 
     def get_price_list_multiplier(self, obj):
         return float(obj.price_list.multiplier) if obj.price_list else None

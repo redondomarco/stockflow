@@ -5,7 +5,7 @@ from .views import PriceListViewSet, CustomerViewSet, OrderViewSet, DeliveryRout
 router = DefaultRouter()
 router.register('price-lists', PriceListViewSet)
 router.register('zones', ZoneViewSet, basename='zone')
-router.register('customers', CustomerViewSet)
+router.register('customers', CustomerViewSet, basename='customer')
 router.register('routes', DeliveryRouteViewSet, basename='deliveryroute')
 router.register('', OrderViewSet)
 

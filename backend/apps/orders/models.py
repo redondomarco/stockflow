@@ -1,5 +1,6 @@
 import re
 from django.db import models, transaction
+from django.db.models import Sum
 from django.contrib.auth.models import User
 from apps.products.models import Product
 from decimal import Decimal
@@ -174,7 +175,6 @@ class Order(models.Model):
 
     @property
     def amount_paid(self):
-        from django.db.models import Sum
         result = self.payments.filter(status='approved').aggregate(total=Sum('amount'))['total']
         return result or Decimal('0')
 

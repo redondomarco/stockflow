@@ -70,7 +70,6 @@ class Product(models.Model):
 
     def save(self, *args, **kwargs):
         if self.is_bundle and self.bundle_quantity and self.bundle_unit_price:
-            from decimal import Decimal
             self.price = Decimal(str(self.bundle_quantity)) * self.bundle_unit_price
         super().save(*args, **kwargs)
 

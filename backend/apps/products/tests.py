@@ -173,3 +173,12 @@ class SectionPermissionTests(ProductTestBase):
         Product.objects.create(name='Baja', sku='B1', price=Decimal('1'), category=cat, is_active=False)
         res = self.client.get('/api/products/categories/')
         self.assertEqual(res.data['results'][0]['product_count'], 1)
+
+
+class NegativeStockStatsTests(ProductTestBase):
+    def test_negative_stock_counts_as_out_of_stock(self):
+        # Con la política de stock "permitir" el stock puede quedar negativo
+        Product.objects.create(name='Vendido de más', sku='N1', price=Decimal('1'), stock=-3)
+        res = self.client.get('/api/products/stats/')
+        self.assertEqual(res.data['out_of_stock_count'], 1)
+        self.assertIn('N1', [p['sku'] for p in self.client.get('/api/products/low_stock/').data])

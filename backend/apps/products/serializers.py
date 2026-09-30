@@ -10,7 +10,8 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'description', 'product_count', 'created_at']
 
     def get_product_count(self, obj):
-        return obj.products.filter(is_active=True).count()
+        count = getattr(obj, 'product_count', None)  # anotado en CategoryViewSet
+        return count if count is not None else obj.products.filter(is_active=True).count()
 
 
 class SupplierSerializer(serializers.ModelSerializer):

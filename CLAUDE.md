@@ -104,6 +104,13 @@ docker compose exec backend python manage.py test apps.orders.test_delivery   # 
 ### Pagination gotcha
 ViewSets that feed dropdowns or full pickers **must** set `pagination_class = None` (e.g. `CustomerViewSet`, `ProductViewSet`, `ZoneViewSet`). The global default is 20 items — easy to miss for lists that seem short but grow.
 
+### Query performance
+List endpoints must run a **constant** number of SQL queries regardless of row count — `orders/test_query_counts.py` enforces this for every list endpoint (add new ones to `LIST_ENDPOINTS`).
+- Counts/dates shown per row are **annotated** in the ViewSet queryset (`order_count`, `last_order_at`, `customer_count`, `product_count`); the serializer uses the annotation and falls back to a query only for single instances (create/update responses)
+- `OrderViewSet` / `available_orders` use `ORDER_PREFETCH` (items+product, status_history+changed_by, payments, route_items+route); serializers must iterate `.all()` on those relations, not call `.filter()`/`.first()`/`.order_by()` (that bypasses the prefetch)
+- `DeliveryRouteViewSet` responses go through `_route_response()`, which re-reads the route with its prefetches
+- Aggregates (stats, low stock, debt dashboard) are computed in SQL; money is summed as `Decimal` and converted to `float` only in the response
+
 ## API routes summary
 
 ```
@@ -154,4 +161,3 @@ PATCH      /api/users/config/             # superuser only
 - An order can only appear on one non-cancelled delivery route at a time
 - `DeliveryRoute.driver` is an `auth.User` with `profile.is_driver = True`
 - Bundle `price` is read-only / auto-calculated; edit `bundle_unit_price` and `bundle_quantity`
-- `celery` is in `requirements.txt` but no tasks exist and no worker runs — not operational

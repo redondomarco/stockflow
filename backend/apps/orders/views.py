@@ -7,6 +7,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.permissions import SectionPermission
 from django.db import transaction
+from django.db.models import Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
+from decimal import Decimal
+from apps.payments.models import Payment
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -28,6 +32,15 @@ from .services import (
 from apps.payments.services import handle_order_cancellation
 
 
+# Relaciones que usa OrderSerializer; precargarlas evita consultas por pedido.
+ORDER_PREFETCH = (
+    Prefetch('items', queryset=OrderItem.objects.select_related('product')),
+    Prefetch('status_history', queryset=OrderStatusHistory.objects.select_related('changed_by')),
+    'payments',
+    Prefetch('route_items', queryset=DeliveryRouteItem.objects.select_related('route')),
+)
+
+
 VALID_TRANSITIONS = {
     'pending': ['cancelled'],
     'partial': ['cancelled'],
@@ -37,7 +50,7 @@ VALID_TRANSITIONS = {
 
 
 class ZoneViewSet(viewsets.ModelViewSet):
-    queryset = Zone.objects.all()
+    queryset = Zone.objects.annotate(customer_count=Count('customers'))
     serializer_class = ZoneSerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'customers'
@@ -45,7 +58,7 @@ class ZoneViewSet(viewsets.ModelViewSet):
 
 
 class PriceListViewSet(viewsets.ModelViewSet):
-    queryset = PriceList.objects.all().order_by('name')
+    queryset = PriceList.objects.annotate(customer_count=Count('customers')).order_by('name')
     serializer_class = PriceListSerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'price_lists'
@@ -142,7 +155,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
     ordering = ['name']
 
     def get_queryset(self):
-        qs = Customer.objects.all().order_by('name')
+        qs = Customer.objects.select_related('price_list', 'zone').prefetch_related('enabled_products').annotate(
+            order_count=Count('orders', distinct=True),
+            last_order_at=Max('orders__created_at', filter=~Q(orders__status='cancelled')),
+        ).order_by('name')
         show_all = self.request.query_params.get('all')
         show_inactive = self.request.query_params.get('inactive')
         if show_inactive:
@@ -167,15 +183,17 @@ class CustomerViewSet(viewsets.ModelViewSet):
         orders = (
             Order.objects.filter(customer=customer)
             .exclude(status='cancelled')
-            .prefetch_related('payments', 'items')
+            .prefetch_related('payments')
             .order_by('-created_at')
         )
 
         statement = []
+        total_billed = total_paid = Decimal('0')
         for order in orders:
             payments = list(order.payments.all())
-            amount_paid = sum(p.amount for p in payments if p.status == 'approved')
-            balance = order.total - amount_paid
+            amount_paid = sum((p.amount for p in payments if p.status == 'approved'), Decimal('0'))
+            total_billed += order.total
+            total_paid += amount_paid
             statement.append({
                 'id': order.id,
                 'order_number': order.order_number,
@@ -184,7 +202,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 'status_display': order.get_status_display(),
                 'total': float(order.total),
                 'amount_paid': float(amount_paid),
-                'balance': float(balance),
+                'balance': float(order.total - amount_paid),
                 'payments': [
                     {
                         'id': p.id,
@@ -198,55 +216,51 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 ],
             })
 
-        total_billed = sum(o['total'] for o in statement)
-        total_paid = sum(o['amount_paid'] for o in statement)
-
         return Response({
             'customer': CustomerSerializer(customer).data,
             'orders': statement,
             'summary': {
-                'total_billed': total_billed,
-                'total_paid': total_paid,
-                'balance': total_billed - total_paid,
+                'total_billed': float(total_billed),
+                'total_paid': float(total_paid),
+                'balance': float(total_billed - total_paid),
                 'order_count': len(statement),
             },
         })
 
     @action(detail=False, methods=['get'])
     def debt_dashboard(self, request):
-        all_orders = (
-            Order.objects.exclude(status='cancelled')
-            .select_related('customer')
-            .prefetch_related('payments')
+        """Clientes con saldo pendiente (pedidos no anulados − pagos aprobados), calculado en una consulta."""
+        money = DecimalField(max_digits=14, decimal_places=2)
+        active_orders = Order.objects.filter(customer=OuterRef('pk')).exclude(status='cancelled')
+        billed = active_orders.values('customer').annotate(s=Sum('total')).values('s')
+        order_count = active_orders.values('customer').annotate(c=Count('id')).values('c')
+        paid = (
+            Payment.objects.filter(order__customer=OuterRef('pk'), status='approved')
+            .exclude(order__status='cancelled')
+            .values('order__customer').annotate(s=Sum('amount')).values('s')
         )
-
-        customer_data = {}
-        for order in all_orders:
-            cid = order.customer_id
-            if cid not in customer_data:
-                customer_data[cid] = {
-                    'customer_id': cid,
-                    'customer_name': order.customer.name,
-                    'customer_email': order.customer.email,
-                    'total_billed': 0.0,
-                    'total_paid': 0.0,
-                    'order_count': 0,
-                }
-            customer_data[cid]['total_billed'] += float(order.total)
-            customer_data[cid]['total_paid'] += sum(
-                float(p.amount) for p in order.payments.all() if p.status == 'approved'
+        customers = (
+            Customer.objects.annotate(
+                total_billed=Coalesce(Subquery(billed, output_field=money), Value(Decimal('0')), output_field=money),
+                total_paid=Coalesce(Subquery(paid, output_field=money), Value(Decimal('0')), output_field=money),
+                order_count=Coalesce(Subquery(order_count), Value(0)),
             )
-            customer_data[cid]['order_count'] += 1
-
-        result = []
-        for data in customer_data.values():
-            balance = round(data['total_billed'] - data['total_paid'], 2)
-            if balance <= 0:
-                continue
-            result.append({**data, 'balance': balance})
-
-        result.sort(key=lambda x: x['balance'], reverse=True)
-        return Response(result)
+            .annotate(balance=F('total_billed') - F('total_paid'))
+            .filter(balance__gt=0)
+            .order_by('-balance', 'name')
+        )
+        return Response([
+            {
+                'customer_id': c.id,
+                'customer_name': c.name,
+                'customer_email': c.email,
+                'total_billed': float(c.total_billed),
+                'total_paid': float(c.total_paid),
+                'order_count': c.order_count,
+                'balance': float(c.balance),
+            }
+            for c in customers
+        ])
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
@@ -281,7 +295,6 @@ class CustomerViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({'error': 'No se pudo leer el archivo. Verificá que sea un CSV UTF-8.'}, status=400)
 
-        from apps.products.models import Product as Prod
         created = 0
         skipped = 0
         errors = []
@@ -354,7 +367,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
             if skus_raw:
                 skus = [s.strip() for s in skus_raw.split('|') if s.strip()]
-                products = Prod.objects.filter(sku__in=skus)
+                products = Product.objects.filter(sku__in=skus)
                 customer.enabled_products.set(products)
 
             created += 1
@@ -363,7 +376,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 
 class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.select_related('customer', 'created_by').prefetch_related('items', 'status_history', 'payments')
+    queryset = Order.objects.select_related('customer', 'created_by').prefetch_related(*ORDER_PREFETCH)
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'orders'
@@ -609,7 +622,6 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def stats(self, request):
         orders = Order.objects.all()
-        from django.db.models import Sum
 
         return Response({
             'total': orders.count(),
@@ -635,10 +647,14 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        return DeliveryRoute.objects.prefetch_related(
-            'items__order__items',
-            'items__order__customer',
-        ).select_related('driver').all()
+        return DeliveryRoute.objects.select_related('driver').prefetch_related(
+            Prefetch('items', queryset=DeliveryRouteItem.objects.select_related('order__customer')),
+            Prefetch('items__order__items', queryset=OrderItem.objects.select_related('product')),
+        )
+
+    def _route_response(self, route):
+        """Hoja completa, releída con las relaciones precargadas."""
+        return Response(DeliveryRouteSerializer(self.get_queryset().get(pk=route.pk)).data)
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):
@@ -650,7 +666,9 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             route = serializer.save()
-        return Response(DeliveryRouteSerializer(route).data, status=status.HTTP_201_CREATED)
+        response = self._route_response(route)
+        response.status_code = status.HTTP_201_CREATED
+        return response
 
     def update(self, request, *args, **kwargs):
         # Los ítems se gestionan con add_orders / remove_item; acá solo fecha, repartidor y notas.
@@ -661,7 +679,7 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         route = serializer.save()
         # Se devuelve la hoja completa: el frontend reemplaza la seleccionada con esta respuesta.
-        return Response(DeliveryRouteSerializer(self.get_queryset().get(pk=route.pk)).data)
+        return self._route_response(route)
 
     @action(detail=False, methods=['get'])
     def available_orders(self, request):
@@ -671,9 +689,8 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         ).values_list('order_id', flat=True)
         orders = Order.objects.filter(
             status__in=['pending', 'partial']
-        ).exclude(id__in=active_order_ids).select_related('customer').prefetch_related('items').order_by('customer__priority', 'customer__name')
-        from .serializers import OrderSerializer as OS
-        return Response(OS(orders, many=True).data)
+        ).exclude(id__in=active_order_ids).select_related('customer').prefetch_related(*ORDER_PREFETCH).order_by('customer__priority', 'customer__name')
+        return Response(OrderSerializer(orders, many=True).data)
 
     @action(detail=True, methods=['post'])
     def change_status(self, request, pk=None):
@@ -687,7 +704,7 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
             )
         route.status = new_status
         route.save()
-        return Response(DeliveryRouteSerializer(route).data)
+        return self._route_response(route)
 
     @action(detail=True, methods=['post'])
     def add_orders(self, request, pk=None):
@@ -717,8 +734,7 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
                 defaults={'notes': item_data.get('notes', ''),
                           'sort_order': route.items.count() + idx},
             )
-        route.refresh_from_db()
-        return Response(DeliveryRouteSerializer(route).data)
+        return self._route_response(route)
 
     @action(detail=True, methods=['post'])
     def remove_item(self, request, pk=None):
@@ -727,8 +743,7 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Solo se pueden quitar pedidos de hojas en borrador.'}, status=400)
         item_id = request.data.get('item_id')
         DeliveryRouteItem.objects.filter(id=item_id, route=route).delete()
-        route.refresh_from_db()
-        return Response(DeliveryRouteSerializer(route).data)
+        return self._route_response(route)
 
     @action(detail=True, methods=['post'])
     def update_item(self, request, pk=None):
@@ -740,5 +755,4 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         if 'notes' in request.data:
             item.notes = request.data['notes']
         item.save()
-        route.refresh_from_db()
-        return Response(DeliveryRouteSerializer(route).data)
+        return self._route_response(route)

@@ -12,7 +12,9 @@ class ZoneSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'description', 'color', 'customer_count']
 
     def get_customer_count(self, obj):
-        return obj.customers.count()
+        # Anotado en el queryset del ViewSet (una sola consulta para toda la lista)
+        count = getattr(obj, 'customer_count', None)
+        return count if count is not None else obj.customers.count()
 
 
 class PriceListSerializer(serializers.ModelSerializer):
@@ -23,7 +25,8 @@ class PriceListSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_customer_count(self, obj):
-        return obj.customers.count()
+        count = getattr(obj, 'customer_count', None)
+        return count if count is not None else obj.customers.count()
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -41,12 +44,18 @@ class CustomerSerializer(serializers.ModelSerializer):
         # la unicidad real se controla en validate_email.
         extra_kwargs = {'email': {'validators': []}, 'cuit': {'validators': []}}
 
+    # order_count / last_order_at vienen anotados por CustomerViewSet.get_queryset;
+    # para instancias sueltas (alta, edición) se consultan.
     def get_order_count(self, obj):
-        return obj.orders.count()
+        count = getattr(obj, 'order_count', None)
+        return count if count is not None else obj.orders.count()
 
     def get_last_order_date(self, obj):
-        last = obj.orders.exclude(status='cancelled').order_by('-created_at').values('created_at').first()
-        return timezone.localtime(last['created_at']).date().isoformat() if last else None
+        if hasattr(obj, 'last_order_at'):
+            last = obj.last_order_at
+        else:
+            last = obj.orders.exclude(status='cancelled').order_by('-created_at').values_list('created_at', flat=True).first()
+        return timezone.localtime(last).date().isoformat() if last else None
 
     def get_price_list_multiplier(self, obj):
         return float(obj.price_list.multiplier) if obj.price_list else None
@@ -122,7 +131,8 @@ class OrderSerializer(serializers.ModelSerializer):
         return float(obj.total - amount_paid)
 
     def get_route_info(self, obj):
-        item = obj.route_items.select_related('route').first()
+        # .all() usa el prefetch de route_items__route (ver ORDER_PREFETCH en views)
+        item = next(iter(obj.route_items.all()), None)
         if not item:
             return None
         return {
@@ -164,7 +174,9 @@ class DeliveryRouteItemSerializer(serializers.ModelSerializer):
 
     def get_order_items(self, obj):
         items = []
-        for it in obj.order.items.select_related('product__bundle_child').order_by('product__sort_order', 'product__name'):
+        # items + product vienen precargados en DeliveryRouteViewSet.get_queryset
+        order_items = sorted(obj.order.items.all(), key=lambda it: (it.product.sort_order, it.product.name))
+        for it in order_items:
             p = it.product
             items.append({
                 'product_name': p.name,
@@ -200,7 +212,7 @@ class DeliveryRouteSerializer(serializers.ModelSerializer):
         read_only_fields = ['route_number']
 
     def get_items_count(self, obj):
-        return obj.items.count()
+        return len(obj.items.all())
 
 
 class DeliveryRouteItemInputSerializer(serializers.Serializer):
@@ -248,12 +260,3 @@ class DeliveryRouteWriteSerializer(serializers.ModelSerializer):
                 sort_order=idx,
             )
         return route
-
-
-class CreateOrderSerializer(serializers.Serializer):
-    customer = serializers.PrimaryKeyRelatedField(queryset=__import__('apps.orders.models', fromlist=['Customer']).Customer.objects.all())
-    items = serializers.ListField(child=serializers.DictField())
-    shipping_address = serializers.CharField(required=False, allow_blank=True)
-    shipping_cost = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    notes = serializers.CharField(required=False, allow_blank=True)

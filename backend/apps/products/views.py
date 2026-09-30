@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.users.permissions import SectionPermission
 from django.db import transaction
+from django.db.models import Count, DecimalField, F, Q, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
@@ -18,7 +19,9 @@ from .serializers import (
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all().order_by("name")
+    queryset = Category.objects.annotate(
+        product_count=Count('products', filter=Q(products__is_active=True))
+    ).order_by('name')
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated, SectionPermission]
     permission_section = 'products'
@@ -55,7 +58,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def low_stock(self, request):
         """Productos con stock bajo el mínimo"""
-        products = [p for p in self.get_queryset() if p.is_low_stock]
+        products = self.filter_queryset(self.get_queryset()).filter(stock__lte=F('stock_min'))
         serializer = self.get_serializer(products, many=True)
         return Response(serializer.data)
 
@@ -107,17 +110,18 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Estadísticas generales de productos"""
-        products = Product.objects.filter(is_active=True)
-        total = products.count()
-        low_stock = sum(1 for p in products if p.is_low_stock)
-        out_of_stock = products.filter(stock=0).count()
-        total_value = sum(p.stock * p.cost for p in products)
-
+        totals = Product.objects.filter(is_active=True).aggregate(
+            total=Count('id'),
+            low_stock=Count('id', filter=Q(stock__lte=F('stock_min'))),
+            # Con la política de stock "permitir" el stock puede quedar negativo: también es agotado
+            out_of_stock=Count('id', filter=Q(stock__lte=0)),
+            value=Sum(F('stock') * F('cost'), output_field=DecimalField(max_digits=16, decimal_places=2)),
+        )
         return Response({
-            'total_products': total,
-            'low_stock_count': low_stock,
-            'out_of_stock_count': out_of_stock,
-            'total_inventory_value': float(total_value),
+            'total_products': totals['total'],
+            'low_stock_count': totals['low_stock'],
+            'out_of_stock_count': totals['out_of_stock'],
+            'total_inventory_value': float(totals['value'] or 0),
         })
 
 

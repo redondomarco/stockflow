@@ -17,8 +17,13 @@ export default function LoginPage() {
     try {
       await login(form.username, form.password)
       navigate('/dashboard')
-    } catch {
-      setError('Usuario o contraseña incorrectos')
+    } catch (e) {
+      const status = e.response?.status
+      setError(
+        status === 429 ? 'Demasiados intentos. Esperá un minuto y volvé a probar.'
+        : status === 401 || status === 400 ? 'Usuario o contraseña incorrectos'
+        : 'No se pudo conectar con el servidor'
+      )
     } finally {
       setLoading(false)
     }

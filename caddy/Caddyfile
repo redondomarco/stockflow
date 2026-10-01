@@ -1,0 +1,17 @@
+# HTTPS automático con Let's Encrypt para el dominio de .env (DOMAIN).
+# Caddy obtiene y renueva el certificado solo; necesita los puertos 80 y 443
+# abiertos y el DNS del dominio apuntando al servidor.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	# HSTS: empezar con un valor bajo y subirlo (31536000 = 1 año) una vez
+	# verificado que HTTPS funciona bien. Ver docs/DEPLOY-DIGITALOCEAN.md.
+	header Strict-Transport-Security "max-age={$HSTS_MAX_AGE}"
+
+	# Caddy agrega X-Forwarded-For / X-Forwarded-Proto; nginx los respeta.
+	reverse_proxy nginx:80
+}

@@ -31,6 +31,8 @@ make makemigrations / migrate / shell-backend / shell-db / logs / reset
 | dev  | Backend API                      | http://localhost:8000/api |
 | dev  | PostgreSQL                       | 127.0.0.1:5432 |
 
+Public deployment (DigitalOcean, HTTPS): `docs/DEPLOY-DIGITALOCEAN.md`. Setting `COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml` in `.env` adds Caddy (automatic Let's Encrypt for `DOMAIN`) in front of nginx; `HTTPS=True` makes Django trust `X-Forwarded-Proto` and use secure cookies. nginx rate-limits `/api/token/` and `/admin/login/` (10/min per IP) and takes the client IP from Caddy's `X-Forwarded-For`. Backups: `make backup` / `make restore FILE=...` (`scripts/`).
+
 In production only nginx publishes a port; db, redis and backend are internal. `DEBUG` defaults to `False` and Django refuses to start without `SECRET_KEY` unless `DEBUG=True`.
 
 `backend/entrypoint.sh` runs `migrate` and `collectstatic` on every start. It does **not** run `makemigrations` (migrations are generated in dev and committed). The initial superuser is created only if the DB has none, using `ADMIN_USERNAME`/`ADMIN_PASSWORD` from `.env`.

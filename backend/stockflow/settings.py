@@ -133,10 +133,18 @@ CORS_ALLOW_CREDENTIALS = True
 # Orígenes desde los que se accede al admin detrás de nginx (p. ej. http://192.168.1.200)
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
 
-# Cabeceras de seguridad (no se fuerza HTTPS: el sistema corre en la red local)
+# Cabeceras de seguridad
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_REFERRER_POLICY = 'same-origin'
+
+# HTTPS=True cuando el sistema está detrás de un proxy con TLS (Caddy en
+# docker-compose.https.yml). En la red local sin TLS se deja en False.
+if os.environ.get('HTTPS', 'False') == 'True':
+    # El proxy informa el protocolo original; nginx lo reenvía tal cual.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Redis Cache
 CACHES = {

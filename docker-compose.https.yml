@@ -1,0 +1,37 @@
+# Despliegue público (p. ej. DigitalOcean): Caddy termina HTTPS delante de nginx.
+# Se activa agregando en .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml
+# así todos los comandos (`make deploy`, `docker compose ...`) lo incluyen.
+
+services:
+  nginx:
+    # nginx deja de publicar puertos: solo Caddy queda expuesto.
+    ports: !reset []
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: stockflow_caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Definí DOMAIN en .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Definí ACME_EMAIL en .env}
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-300}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificados: no borrar
+      - caddy_config:/config
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

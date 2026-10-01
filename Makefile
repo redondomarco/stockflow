@@ -2,7 +2,7 @@ DC = docker compose
 DC_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
 .PHONY: start stop restart build deploy logs shell-backend shell-db migrate reset \
-        dev dev-build makemigrations test
+        backup restore dev dev-build makemigrations test
 
 # ── Producción ────────────────────────────────────────────────
 start:
@@ -31,10 +31,18 @@ shell-backend:
 	$(DC) exec backend python manage.py shell
 
 shell-db:
-	$(DC) exec db psql -U stockflow -d stockflow
+	$(DC) exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
 reset:
 	$(DC) down -v
+
+# Backup comprimido en backups/ (retención: BACKUP_KEEP_DAYS, 14 por defecto)
+backup:
+	./scripts/backup.sh
+
+# make restore FILE=backups/stockflow-AAAAMMDD-HHMMSS.sql.gz
+restore:
+	./scripts/restore.sh $(FILE)
 
 # ── Desarrollo ────────────────────────────────────────────────
 dev:

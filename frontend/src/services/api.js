@@ -16,7 +16,9 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   async err => {
-    if (err.response?.status === 401) {
+    // Un 401 del propio login (credenciales incorrectas) lo maneja la pantalla de login
+    const isAuthEndpoint = err.config?.url?.startsWith('/token/')
+    if (err.response?.status === 401 && !isAuthEndpoint) {
       const refresh = localStorage.getItem('refresh_token')
       if (refresh) {
         try {

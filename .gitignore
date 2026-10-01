@@ -38,3 +38,6 @@ Thumbs.db
 # Tests
 .coverage
 htmlcov/
+
+# Backups de la base
+backups/

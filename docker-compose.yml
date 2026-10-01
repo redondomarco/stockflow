@@ -2,6 +2,13 @@
 # Configuración y secretos en .env (ver .env.example).
 # Desarrollo: docker compose -f docker-compose.yml -f docker-compose.dev.yml up  (o `make dev`)
 
+# Logs de Docker con tamaño acotado (evita llenar el disco del servidor)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:15-alpine
@@ -19,11 +26,13 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
+    logging: *logging
 
   redis:
     image: redis:7-alpine
     container_name: stockflow_redis
     restart: unless-stopped
+    logging: *logging
 
   backend:
     build:
@@ -34,6 +43,7 @@ services:
       - media_volume:/app/media
     environment:
       - DEBUG=${DEBUG:-False}
+      - HTTPS=${HTTPS:-False}
       - SECRET_KEY=${SECRET_KEY:-}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-stockflow}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-stockflow}
       - REDIS_URL=redis://redis:6379/0
@@ -50,6 +60,7 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
+    logging: *logging
 
   nginx:
     build:
@@ -64,6 +75,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   postgres_data:

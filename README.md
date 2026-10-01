@@ -29,6 +29,8 @@ cp .env.example .env
 make deploy        # compila frontend y backend y levanta todo
 ```
 
+Para publicarlo en internet con HTTPS (DigitalOcean), seguí [docs/DEPLOY-DIGITALOCEAN.md](docs/DEPLOY-DIGITALOCEAN.md).
+
 La app queda en `http://<servidor>` (puerto `HTTP_PORT`, 80 por defecto). Solo nginx expone un puerto.
 
 ### Desarrollo

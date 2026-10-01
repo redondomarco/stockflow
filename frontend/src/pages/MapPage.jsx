@@ -29,9 +29,12 @@ export default function MapPage() {
   useEffect(() => {
     if (loading || mapRef.current) return
     const map = L.map(mapDiv.current, { center: ROSARIO, zoom: ZOOM })
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Política de uso de OSM: URL sin subdominios a/b/c, atribución visible y Referer
+    // (si falta, los tiles vienen como "Access blocked")
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
+      referrerPolicy: 'strict-origin-when-cross-origin',
     }).addTo(map)
     layerRef.current = L.layerGroup().addTo(map)
     mapRef.current = map

@@ -98,3 +98,11 @@ class UserCsvTests(APITestCase):
         self.assertTrue(existing.check_password('nueva-clave'))
         self.assertEqual(existing.profile.permissions['orders'], 'read')
         self.assertEqual(existing.profile.permissions['payments'], 'write')  # nivel inválido → write
+
+
+class SecurityHeadersTests(APITestCase):
+    def test_referrer_policy_allows_osm_tiles(self):
+        # Los tiles de OpenStreetMap se bloquean ("Access blocked") si el navegador no envía
+        # Referer: no usar same-origin ni no-referrer (ver también nginx/nginx.conf).
+        res = self.client.get('/api/users/config/')
+        self.assertEqual(res['Referrer-Policy'], 'strict-origin-when-cross-origin')

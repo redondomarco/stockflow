@@ -136,7 +136,9 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS'
 # Cabeceras de seguridad
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_REFERRER_POLICY = 'same-origin'
+# strict-origin-when-cross-origin (no same-origin): los tiles de OpenStreetMap exigen
+# un Referer; a otros dominios solo se envía el origen, nunca la ruta.
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 # HTTPS=True cuando el sistema está detrás de un proxy con TLS (Caddy en
 # docker-compose.https.yml). En la red local sin TLS se deja en False.

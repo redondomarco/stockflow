@@ -34,9 +34,12 @@ export default function MapPicker({ lat, lng, onConfirm, onClose }) {
       center: [coords.lat, coords.lng],
       zoom: hasCoords ? 15 : DEFAULT_ZOOM,
     })
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Política de uso de OSM: URL sin subdominios a/b/c, atribución visible y Referer
+    // (si falta, los tiles vienen como "Access blocked")
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
+      referrerPolicy: 'strict-origin-when-cross-origin',
     }).addTo(map)
 
     const marker = L.marker([coords.lat, coords.lng], { draggable: true }).addTo(map)

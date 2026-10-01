@@ -50,7 +50,7 @@ export default function LoginPage() {
                 className="form-input"
                 style={{ paddingLeft: 34 }}
                 type="text"
-                placeholder="admin"
+                placeholder="Tu usuario"
                 value={form.username}
                 onChange={e => setForm(p => ({ ...p, username: e.target.value }))}
                 required
@@ -78,10 +78,6 @@ export default function LoginPage() {
             {loading ? <><div className="spinner" style={{borderTopColor:'white'}}/> Ingresando...</> : 'Ingresar'}
           </button>
         </form>
-
-        <div style={{ textAlign: 'center', marginTop: 24, fontSize: 12, color: 'var(--text-muted)' }}>
-          Usuario por defecto: <span className="mono">admin / admin123</span>
-        </div>
       </div>
     </div>
   )

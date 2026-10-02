@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { priceListsApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { Plus, X, Edit2, Tag, Upload, Download, AlertTriangle } from 'lucide-react'
 
 const empty = { name: '', multiplier: 1, description: '' }
@@ -11,6 +12,7 @@ function pct(m) {
 }
 
 export default function PriceListsPage() {
+  const canWrite = usePermissions().can('price_lists', 'write')
   const [lists, setLists] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | 'form' | 'import-preview' | 'import-result'
@@ -101,11 +103,15 @@ export default function PriceListsPage() {
           <button className="btn btn-secondary" onClick={exportCsv} title="Exportar CSV">
             <Download size={14} /> Exportar
           </button>
-          <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing} title="Importar CSV">
-            <Upload size={14} /> {importing ? 'Leyendo...' : 'Importar'}
-          </button>
-          <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} />
-          <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva lista</button>
+          {canWrite && (
+            <>
+              <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing} title="Importar CSV">
+                <Upload size={14} /> {importing ? 'Leyendo...' : 'Importar'}
+              </button>
+              <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} />
+              <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva lista</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -157,7 +163,7 @@ export default function PriceListsPage() {
                         </span>
                       </td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(pl)} title="Editar"><Edit2 size={13} /></button>
+                        {canWrite && <button className="btn btn-ghost btn-sm" onClick={() => openEdit(pl)} title="Editar"><Edit2 size={13} /></button>}
                       </td>
                     </tr>
                   ))}

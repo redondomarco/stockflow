@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { paymentsApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { CheckCircle, XCircle, RotateCcw, AlertTriangle, Check } from 'lucide-react'
 
 const STATUS_LABELS = { pending:'Pendiente', processing:'Procesando', approved:'Aprobado', rejected:'Rechazado', refunded:'Reembolsado' }
 const METHOD_LABELS = { cash:'Efectivo', transfer:'Transferencia', credit_card:'T. Crédito', debit_card:'T. Débito', mercadopago:'MercadoPago', other:'Otro' }
 
 export default function PaymentsPage() {
+  // Con aprobación restringida el backend además exige "Puede aprobar pagos" (responde 403 con mensaje)
+  const canWrite = usePermissions().can('payments', 'write')
   const [payments, setPayments] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -144,7 +147,7 @@ export default function PaymentsPage() {
                       <td><span className="mono text-muted text-sm">{new Date(p.created_at).toLocaleDateString('es-AR')}</span></td>
                       <td>
                         <div className="flex gap-2">
-                          {p.status === 'pending' && (
+                          {canWrite && p.status === 'pending' && (
                             <>
                               <button className="btn btn-ghost btn-sm" onClick={() => approve(p.id)} title="Aprobar" style={{ color: 'var(--green)' }}>
                                 <CheckCircle size={14} />
@@ -154,12 +157,12 @@ export default function PaymentsPage() {
                               </button>
                             </>
                           )}
-                          {p.status === 'approved' && (
+                          {canWrite && p.status === 'approved' && (
                             <button className="btn btn-ghost btn-sm" onClick={() => refund(p.id)} title="Reembolsar" style={{ color: 'var(--yellow)' }}>
                               <RotateCcw size={14} />
                             </button>
                           )}
-                          {p.needs_review && (
+                          {canWrite && p.needs_review && (
                             <button className="btn btn-ghost btn-sm" onClick={() => markReviewed(p.id)} title="Conservar cobro (marcar revisado)" style={{ color: 'var(--green)' }}>
                               <Check size={14} />
                             </button>

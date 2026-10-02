@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ordersApi, paymentsApi, productsApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { Plus, X, ChevronRight, CreditCard, Search, Truck, Edit2 } from 'lucide-react'
 
 // Faltantes devueltos por el backend según la política de stock (409 aviso / 400 bloqueo)
@@ -141,6 +142,11 @@ const ROUTE_STATUS_LABELS = { draft: 'Borrador', in_progress: 'En reparto', comp
 
 export default function OrdersPage() {
   const navigate = useNavigate()
+  // Botones según permisos: pedidos (alta, edición, entrega, anulación), pagos y clientes (habilitar productos)
+  const { can } = usePermissions()
+  const canWrite = can('orders', 'write')
+  const canPay = can('payments', 'write')
+  const canEditCustomers = can('customers', 'write')
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -395,7 +401,7 @@ export default function OrdersPage() {
           <h1 className="page-title">Pedidos</h1>
           <p className="page-subtitle">Gestión de pedidos y entregas</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo pedido</button>
+        {canWrite && <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo pedido</button>}
       </div>
 
       <div className="page-body">
@@ -475,20 +481,20 @@ export default function OrdersPage() {
                         <td>
                           <div className="flex gap-2">
                             <button className="btn btn-ghost btn-sm" onClick={() => openDetail(o)} title="Ver detalle"><ChevronRight size={13} /></button>
-                            {(o.status === 'pending' || o.status === 'partial') && (
+                            {canWrite && (o.status === 'pending' || o.status === 'partial') && (
                               <button className="btn btn-ghost btn-sm" onClick={() => openEditOrder(o)} title="Editar pedido"><Edit2 size={13} /></button>
                             )}
-                            {canDeliver && (
+                            {canWrite && canDeliver && (
                               <button className="btn btn-secondary btn-sm" onClick={() => openDeliver(o)} title="Registrar entrega">
                                 <Truck size={13} />
                               </button>
                             )}
-                            {o.status !== 'cancelled' && balance > 0 && (
+                            {canPay && o.status !== 'cancelled' && balance > 0 && (
                               <button className="btn btn-ghost btn-sm" onClick={() => openPayment(o)} title="Registrar pago" style={{ color: 'var(--accent)' }}>
                                 <CreditCard size={13} />
                               </button>
                             )}
-                            {canCancel && (
+                            {canWrite && canCancel && (
                               <button className="btn btn-ghost btn-sm" onClick={() => cancelOrder(o)} title="Anular" style={{ color: 'var(--red)' }}>
                                 <X size={13} />
                               </button>
@@ -558,9 +564,13 @@ export default function OrdersPage() {
                 ) : customerProducts.length === 0 ? (
                   <div style={{ padding: '12px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Este cliente no tiene productos habilitados.</span>
-                    <button className="btn btn-secondary btn-sm" onClick={openPicker}>
-                      <Plus size={13} /> Habilitar productos
-                    </button>
+                    {canEditCustomers ? (
+                      <button className="btn btn-secondary btn-sm" onClick={openPicker}>
+                        <Plus size={13} /> Habilitar productos
+                      </button>
+                    ) : (
+                      <span className="text-muted text-sm">Pedile a alguien con permiso en Clientes que los habilite.</span>
+                    )}
                   </div>
                 ) : (
                   <div className="table-wrapper">

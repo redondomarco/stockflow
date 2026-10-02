@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { productsApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { Plus, Search, Edit2, ArrowUpDown, X, Package, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react'
 
 const emptyProduct = { name: '', sku: '', description: '', category: '', supplier: '', price: '', cost: '', stock: 0, stock_min: 5, sort_order: 0, track_stock: true, fixed_price: false, is_bundle: false, bundle_child: '', bundle_quantity: '', bundle_unit_weight: '', bundle_unit_price: '', is_active: true }
 
 export default function ProductsPage() {
+  const canWrite = usePermissions().can('products', 'write')
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [suppliers, setSuppliers] = useState([])
@@ -123,11 +125,15 @@ export default function ProductsPage() {
           <button className="btn btn-secondary" onClick={handleExport} disabled={exporting}>
             <Download size={15} /> {exporting ? 'Exportando...' : 'Exportar CSV'}
           </button>
-          <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing}>
-            <Upload size={15} /> {importing ? 'Importando...' : 'Importar CSV'}
-          </button>
-          <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
-          <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo producto</button>
+          {canWrite && (
+            <>
+              <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing}>
+                <Upload size={15} /> {importing ? 'Importando...' : 'Importar CSV'}
+              </button>
+              <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+              <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo producto</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -256,10 +262,12 @@ export default function ProductsPage() {
                         ) : '–'}
                       </td>
                       <td>
-                        <div className="flex gap-2">
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)} title="Editar"><Edit2 size={13} /></button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => openStock(p)} title="Ajustar stock"><ArrowUpDown size={13} /></button>
-                        </div>
+                        {canWrite && (
+                          <div className="flex gap-2">
+                            <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)} title="Editar"><Edit2 size={13} /></button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openStock(p)} title="Ajustar stock"><ArrowUpDown size={13} /></button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

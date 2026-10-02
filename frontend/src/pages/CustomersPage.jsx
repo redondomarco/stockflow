@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ordersApi, priceListsApi, productsApi, zonesApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { Plus, X, Users, Search, Download, Upload, CheckCircle, AlertCircle, Edit2, Package, Map, MapPin, ToggleLeft, ToggleRight } from 'lucide-react'
 import MapPicker from '../components/MapPicker'
 
 const emptyCustomer = { name: '', cuit: '', email: '', phone: '', address: '', localidad: '', zone: '', latitude: '', longitude: '', price_list: '', priority: 5, is_active: true }
 
 export default function CustomersPage() {
+  const canWrite = usePermissions().can('customers', 'write')
   const [customers, setCustomers] = useState([])
   const [priceLists, setPriceLists] = useState([])
   const [zones, setZones] = useState([])
@@ -155,12 +157,16 @@ export default function CustomersPage() {
           <button className="btn btn-secondary" onClick={handleExport} disabled={exporting}>
             <Download size={15} /> {exporting ? 'Exportando...' : 'Exportar CSV'}
           </button>
-          <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing}>
-            <Upload size={15} /> {importing ? 'Importando...' : 'Importar CSV'}
-          </button>
-          <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
-          <button className="btn btn-secondary" onClick={() => setZoneModal(true)}><Map size={15} /> Zonas</button>
-          <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo cliente</button>
+          {canWrite && (
+            <>
+              <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={importing}>
+                <Upload size={15} /> {importing ? 'Importando...' : 'Importar CSV'}
+              </button>
+              <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+              <button className="btn btn-secondary" onClick={() => setZoneModal(true)}><Map size={15} /> Zonas</button>
+              <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nuevo cliente</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -260,7 +266,7 @@ export default function CustomersPage() {
                       </td>
                       <td className="mono text-muted text-sm">{new Date(c.created_at).toLocaleDateString('es-AR')}</td>
                       <td>
-                        <div className="flex gap-2">
+                        {canWrite && <div className="flex gap-2">
                           <button className="btn btn-ghost btn-sm" onClick={() => openProductModal(c)} title="Productos habilitados" disabled={loadingPM}><Package size={13} /></button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Editar"><Edit2 size={13} /></button>
                           <button
@@ -274,7 +280,7 @@ export default function CustomersPage() {
                           >
                             {c.is_active ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
                           </button>
-                        </div>
+                        </div>}
                       </td>
                     </tr>
                   ))}

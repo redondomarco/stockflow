@@ -16,6 +16,7 @@ import RoutesPage from './pages/RoutesPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
 import MapPage from './pages/MapPage'
+import AuditPage from './pages/AuditPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="users" element={<UsersPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="map" element={<MapPage />} />
+              <Route path="audit" element={<AuditPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

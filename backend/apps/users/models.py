@@ -39,6 +39,8 @@ class SystemConfig(models.Model):
     overpayment_policy = models.CharField(max_length=10, choices=OVERPAYMENT_POLICY_CHOICES, default='allow')
     cancelled_order_payments = models.CharField(max_length=10, choices=CANCELLED_ORDER_PAYMENTS_CHOICES, default='keep')
     payment_approval = models.CharField(max_length=10, choices=PAYMENT_APPROVAL_CHOICES, default='section')
+    # Días que se conserva el registro de auditoría (0 = para siempre)
+    audit_retention_days = models.PositiveIntegerField(default=365)
 
     class Meta:
         verbose_name = 'Configuración del sistema'
@@ -71,3 +73,30 @@ class UserProfile(models.Model):
 
     def get_level(self, section):
         return self.permissions.get(section, 'write')
+
+
+class AuditLog(models.Model):
+    """Registro de auditoría: acciones de escritura e inicios de sesión (ver users/audit.py)."""
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='audit_logs')
+    username = models.CharField(max_length=150, blank=True)  # se conserva aunque se borre el usuario
+    section = models.CharField(max_length=30, blank=True, db_index=True)
+    action = models.CharField(max_length=40)
+    description = models.CharField(max_length=300)
+    object_type = models.CharField(max_length=60, blank=True)
+    object_id = models.CharField(max_length=40, blank=True)
+    method = models.CharField(max_length=10)
+    path = models.CharField(max_length=300)
+    status_code = models.PositiveSmallIntegerField()
+    success = models.BooleanField(db_index=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=200, blank=True)
+    details = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name = 'Registro de auditoría'
+        verbose_name_plural = 'Registros de auditoría'
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f'{self.created_at:%Y-%m-%d %H:%M} {self.username or "anónimo"}: {self.description}'

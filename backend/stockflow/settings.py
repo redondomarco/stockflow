@@ -48,6 +48,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Registro de auditoría de acciones de escritura e inicios de sesión
+    'apps.users.audit.AuditMiddleware',
 ]
 
 ROOT_URLCONF = 'stockflow.urls'

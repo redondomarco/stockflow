@@ -5,10 +5,14 @@ from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated, IsAdminUser
+from rest_framework.pagination import PageNumberPagination
+from rest_framework import serializers
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework.views import APIView
 from django.contrib.auth.models import User
-from .models import UserProfile, SystemConfig, default_permissions
+from .models import AuditLog, UserProfile, SystemConfig, default_permissions
 from .serializers import UserSerializer
 from .favicon import FaviconError, favicon_response, parse_favicon
 
@@ -166,6 +170,7 @@ class SystemConfigView(APIView):
             'pdf_logo_width': config.pdf_logo_width,
             'favicon': config.favicon,
             **{field: getattr(config, field) for field in cls.POLICY_FIELDS},
+            'audit_retention_days': config.audit_retention_days,
         }
 
     def get(self, request):
@@ -189,6 +194,14 @@ class SystemConfigView(APIView):
                 except FaviconError as e:
                     return Response({'error': str(e)}, status=400)
             config.favicon = favicon
+        if 'audit_retention_days' in request.data:
+            try:
+                days = int(request.data['audit_retention_days'])
+                if not 0 <= days <= 3650:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return Response({'error': 'La retención de auditoría debe ser un número de días entre 0 y 3650.'}, status=400)
+            config.audit_retention_days = days
         for field, choices in self.POLICY_FIELDS.items():
             if field not in request.data:
                 continue
@@ -207,3 +220,71 @@ class FaviconView(APIView):
 
     def get(self, request):
         return favicon_response(request, SystemConfig.get().favicon)
+
+
+class IsSuperuser(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    user_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = ['id', 'created_at', 'user', 'username', 'user_display', 'section', 'action', 'description',
+                  'object_type', 'object_id', 'method', 'path', 'status_code', 'success', 'ip', 'user_agent', 'details']
+
+    def get_user_display(self, obj):
+        if obj.user_id and obj.user:
+            full = ' '.join(filter(None, [obj.user.first_name, obj.user.last_name]))
+            return full or obj.user.username
+        return obj.username or '—'
+
+
+class AuditPagination(PageNumberPagination):
+    page_size = 50
+
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """Registro de auditoría (solo superusuarios). Filtros: user, section, success, date_from, date_to, q."""
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsAuthenticated, IsSuperuser]
+    pagination_class = AuditPagination
+    filter_backends = []
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related('user')
+        p = self.request.query_params
+        if p.get('user'):
+            # Incluye los intentos de login fallidos contra esa cuenta (no tienen usuario asociado)
+            username = User.objects.filter(pk=p['user']).values_list('username', flat=True).first()
+            qs = qs.filter(Q(user_id=p['user']) | Q(user__isnull=True, username=username or ''))
+        if p.get('section'):
+            qs = qs.filter(section=p['section'])
+        if p.get('success') in ('true', 'false'):
+            qs = qs.filter(success=p['success'] == 'true')
+        if p.get('date_from'):
+            qs = qs.filter(created_at__date__gte=p['date_from'])
+        if p.get('date_to'):
+            qs = qs.filter(created_at__date__lte=p['date_to'])
+        if p.get('q'):
+            q = p['q']
+            qs = qs.filter(Q(description__icontains=q) | Q(username__icontains=q) | Q(ip__icontains=q)
+                           | Q(object_id=q) | Q(path__icontains=q))
+        return qs
+
+    @action(detail=False, methods=['get'])
+    def export_csv(self, request):
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="auditoria.csv"'
+        response.write('\ufeff')
+        writer = csv.writer(response)
+        writer.writerow(['fecha', 'usuario', 'seccion', 'accion', 'descripcion', 'resultado', 'codigo', 'ip', 'metodo', 'ruta'])
+        for log in self.get_queryset()[:50000]:
+            writer.writerow([
+                timezone.localtime(log.created_at).strftime('%Y-%m-%d %H:%M:%S'), log.username, log.section,
+                log.action, log.description, 'ok' if log.success else 'rechazado', log.status_code,
+                log.ip or '', log.method, log.path,
+            ])
+        return response

@@ -130,6 +130,12 @@ export const usersApi = {
   },
 }
 
+// Auditoría (solo superusuarios)
+export const auditApi = {
+  list: (params) => api.get('/users/audit/', { params }),
+  exportCsv: (params) => api.get('/users/audit/export_csv/', { params, responseType: 'blob' }),
+}
+
 // Delivery routes
 export const routesApi = {
   list: () => api.get('/orders/routes/'),

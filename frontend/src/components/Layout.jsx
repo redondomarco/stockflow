@@ -5,7 +5,7 @@ import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
   CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin, Menu, X,
-  LayoutGrid, Table2
+  LayoutGrid, Table2, History
 } from 'lucide-react'
 import { labelTables, loadMobileView, saveMobileView } from './cardTables'
 import { usersApi } from '../services/api'
@@ -141,6 +141,9 @@ export default function Layout() {
               <div className="nav-section">Sistema</div>
               <NavLink to="/users" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <UserCog className="icon" /> Usuarios
+              </NavLink>
+              <NavLink to="/audit" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <History className="icon" /> Auditoría
               </NavLink>
               <NavLink to="/settings" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <Settings className="icon" /> Configuración

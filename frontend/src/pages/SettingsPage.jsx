@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, X, Save, Settings, Package, CreditCard, RotateCcw, ShieldCheck, Image } from 'lucide-react'
+import { Upload, X, Save, Settings, Package, CreditCard, RotateCcw, ShieldCheck, Image, History } from 'lucide-react'
 import { useConfig } from '../context/ConfigContext'
 import api from '../services/api'
 
@@ -124,6 +124,8 @@ export default function SettingsPage() {
 
         <FaviconCard />
 
+        <AuditRetentionCard />
+
         <PolicySettings />
       </div>
     </>
@@ -231,6 +233,60 @@ function FaviconCard() {
         <p className="text-muted text-sm" style={{ marginTop: 12 }}>
           Ícono de la pestaña del navegador y de los accesos directos. SVG, PNG o ICO de hasta {FAVICON_MAX_KB} KB;
           idealmente cuadrado (por ejemplo 64×64 o 512×512).
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function AuditRetentionCard() {
+  const [days, setDays] = useState(null)
+  const [savedDays, setSavedDays] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
+
+  useEffect(() => {
+    api.get('/users/config/').then(r => {
+      const value = r.data.audit_retention_days ?? 365
+      setDays(String(value)); setSavedDays(String(value))
+    }).catch(() => {})
+  }, [])
+
+  const save = async () => {
+    setSaving(true); setMessage(null)
+    try {
+      const r = await api.patch('/users/config/', { audit_retention_days: parseInt(days, 10) })
+      setSavedDays(String(r.data.audit_retention_days)); setDays(String(r.data.audit_retention_days))
+      setMessage({ type: 'success', text: 'Retención guardada.' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (e) {
+      setMessage({ type: 'danger', text: e.response?.data?.error || 'Error al guardar' })
+    } finally { setSaving(false) }
+  }
+
+  if (days === null) return null
+  return (
+    <div className="card" style={{ maxWidth: 600, marginTop: 20 }}>
+      <div style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <History size={16} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Registro de auditoría</span>
+        </div>
+        {message && <div className={`alert alert-${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label className="form-label" htmlFor="audit-retention" style={{ margin: 0 }}>Conservar registros durante</label>
+          <input id="audit-retention" type="number" min="0" max="3650" className="form-input mono" style={{ width: 100 }}
+            value={days} onChange={e => setDays(e.target.value)} />
+          <span className="text-muted text-sm">días</span>
+          {days !== savedDays && (
+            <button className="btn btn-primary" onClick={save} disabled={saving || days === ''} style={{ marginLeft: 'auto' }}>
+              <Save size={14} /> {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          )}
+        </div>
+        <p className="text-muted text-sm" style={{ marginTop: 12 }}>
+          Los registros más antiguos se borran automáticamente una vez por día. 0 = conservar para siempre.
+          Los registros se consultan en Sistema → Auditoría.
         </p>
       </div>
     </div>

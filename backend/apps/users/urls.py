@@ -1,8 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, SystemConfigView, FaviconView
+from .views import AuditLogViewSet, UserViewSet, SystemConfigView, FaviconView
 
 router = DefaultRouter()
+# 'audit' antes que '' para que /api/users/audit/ no se tome como el usuario con pk="audit"
+router.register('audit', AuditLogViewSet, basename='audit')
 router.register('', UserViewSet, basename='user')
 
 urlpatterns = [

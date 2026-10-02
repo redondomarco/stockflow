@@ -1,9 +1,10 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, usePermissions } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
-  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin
+  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin, Menu, X
 } from 'lucide-react'
 
 const navItems = [
@@ -28,6 +29,18 @@ export default function Layout() {
   const { isHidden } = usePermissions()
   const { logoSvg, logoWidth } = useConfig()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Móvil (≤ 900px): la barra lateral está oculta y se abre como panel con el botón ☰
+  const [navOpen, setNavOpen] = useState(false)
+  useEffect(() => { setNavOpen(false) }, [location.pathname])
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e) => { if (e.key === 'Escape') setNavOpen(false) }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'  // evita que el contenido se desplace detrás del panel
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [navOpen])
 
   const handleLogout = () => { logout(); navigate('/login') }
 
@@ -45,8 +58,21 @@ export default function Layout() {
   })
 
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
+    <div className={`app-layout${navOpen ? ' nav-open' : ''}`}>
+      <header className="mobile-topbar">
+        <button className="btn btn-ghost mobile-menu-btn" onClick={() => setNavOpen(true)}
+          aria-label="Abrir menú" aria-expanded={navOpen} aria-controls="sidebar">
+          <Menu size={20} />
+        </button>
+        <span className="mobile-topbar-title">StockFlow</span>
+      </header>
+
+      <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />
+
+      <aside className="sidebar" id="sidebar">
+        <button className="btn btn-ghost sidebar-close" onClick={() => setNavOpen(false)} aria-label="Cerrar menú">
+          <X size={18} />
+        </button>
         <div className="sidebar-logo">
           {logoSvg ? (
             <div

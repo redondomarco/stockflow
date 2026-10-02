@@ -794,3 +794,102 @@ tbody tr:hover {
 
 .stock-dot.warning { background: var(--yellow); }
 .stock-dot.danger { background: var(--red); }
+
+/* ── Móvil: barra lateral como panel deslizable ─────────────────── */
+/* En escritorio la barra superior, el fondo oscuro y el botón de cerrar no se muestran */
+.mobile-topbar,
+.sidebar-backdrop,
+.sidebar-close {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    height: 52px;
+    padding: 0 12px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-menu-btn { padding: 8px; }
+
+  .mobile-topbar-title {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .app-layout { flex-direction: column; }
+
+  .sidebar {
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .app-layout.nav-open .sidebar { transform: translateX(0); }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .app-layout.nav-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar-close {
+    display: flex;
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    padding: 6px;
+  }
+
+  .main-content { margin-left: 0; }
+
+  /* Ítems más altos: más fáciles de tocar */
+  .nav-item { padding: 11px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar-backdrop { transition: none; }
+}
+
+/* ── Pantallas chicas: márgenes y grillas ─────────────────────────── */
+@media (max-width: 640px) {
+  .page-header {
+    padding: 16px 16px 0;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .page-header > div:last-child { flex-wrap: wrap; }
+
+  .page-body { padding: 16px; }
+
+  .form-grid,
+  .form-grid-3 { grid-template-columns: 1fr; }
+
+  /* Algunas pantallas fijan columnas con estilos inline */
+  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .two-col-grid { grid-template-columns: 1fr !important; }
+
+  .modal-overlay { padding: 8px; }
+  .modal-header, .modal-footer { padding: 14px 16px; }
+  .modal-body { padding: 16px; }
+}

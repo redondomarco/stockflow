@@ -41,9 +41,19 @@ export default function AccountStatementPage() {
       .finally(() => setLoading(false))
   }, [selectedId])
 
-  const filtered = customers.filter(c =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase()) || (c.email || '').toLowerCase().includes(search.toLowerCase())
+  // El buscador solo filtra las opciones del selector de abajo
+  const term = search.trim().toLowerCase()
+  const matching = customers.filter(c =>
+    !term || c.name.toLowerCase().includes(term) || (c.email || '').toLowerCase().includes(term)
   )
+  // El cliente ya elegido sigue en la lista aunque el filtro no lo incluya
+  const selected = customers.find(c => String(c.id) === String(selectedId))
+  const filtered = selected && !matching.includes(selected) ? [selected, ...matching] : matching
+  const selectPrompt = !term
+    ? `Elegí un cliente (${customers.length})`
+    : matching.length === 0
+      ? 'Ningún cliente coincide con el filtro'
+      : `Elegí entre ${matching.length} coincidencia${matching.length === 1 ? '' : 's'}`
 
   const toggleExpand = (id) => setExpanded(p => ({ ...p, [id]: !p[id] }))
 
@@ -58,27 +68,34 @@ export default function AccountStatementPage() {
 
       <div className="page-body">
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="toolbar">
-            <div className="search-input" style={{ width: 280 }}>
-              <Search className="search-icon" size={15} />
-              <input
-                className="form-input"
-                placeholder="Buscar cliente..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+          <div className="toolbar" style={{ alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ margin: 0, width: 280, maxWidth: '100%' }}>
+              <label className="form-label" htmlFor="statement-filter">1. Filtrar la lista de clientes (opcional)</label>
+              <div className="search-input">
+                <Search className="search-icon" size={15} />
+                <input
+                  id="statement-filter"
+                  className="form-input"
+                  placeholder="Escribí parte del nombre o email"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
             </div>
-            <select
-              className="form-select"
-              style={{ flex: 1, maxWidth: 340 }}
-              value={selectedId}
-              onChange={e => setSelectedId(e.target.value)}
-            >
-              <option value="">Seleccionar cliente</option>
-              {filtered.map(c => (
-                <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>
-              ))}
-            </select>
+            <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 220, maxWidth: 340 }}>
+              <label className="form-label" htmlFor="statement-customer">2. Cliente</label>
+              <select
+                id="statement-customer"
+                className="form-select"
+                value={selectedId}
+                onChange={e => setSelectedId(e.target.value)}
+              >
+                <option value="">{selectPrompt}</option>
+                {filtered.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ''}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

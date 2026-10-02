@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { routesApi, usersApi } from '../services/api'
+import { routesApi } from '../services/api'
+import { usePermissions } from '../context/AuthContext'
 import { Plus, X, FileDown, Truck, ChevronRight, Trash2 } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -203,6 +204,8 @@ async function downloadSingleReceipt(item, date, driverName, routeNumber, logo) 
 
 export default function RoutesPage() {
   const { logoSvg, pdfLogoWidth } = useConfig()
+  // Con permiso de solo lectura se ven las hojas y los PDFs, sin acciones de edición
+  const canWrite = usePermissions().can('routes', 'write')
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | 'create' | 'detail' | 'add-orders'
@@ -222,7 +225,8 @@ export default function RoutesPage() {
     routesApi.list().then(r => setRoutes(r.data)).finally(() => setLoading(false))
   }
 
-  const loadDrivers = () => usersApi.list().then(r => setDrivers((r.data || []).filter(u => u.is_active && u.is_driver)))
+  // Repartidores activos; endpoint de hojas de ruta (no /users/, que es solo para administradores)
+  const loadDrivers = () => routesApi.drivers().then(r => setDrivers(r.data || []))
 
   useEffect(() => { loadRoutes() }, [])
 
@@ -232,8 +236,13 @@ export default function RoutesPage() {
     setError('')
     setForm({ date: today, driver: '', notes: '' })
     setOrderSelections({})
-    const [, avail] = await Promise.all([loadDrivers(), routesApi.availableOrders()])
-    setAvailableOrders(avail.data)
+    setAvailableOrders([])
+    try {
+      const [, avail] = await Promise.all([loadDrivers(), routesApi.availableOrders()])
+      setAvailableOrders(avail.data)
+    } catch (e) {
+      setError(e.response?.data?.error || e.response?.data?.detail || 'No se pudieron cargar los repartidores o pedidos disponibles.')
+    }
     setModal('create')
   }
 
@@ -270,7 +279,7 @@ export default function RoutesPage() {
 
   const openDetail = async (route) => {
     setSelected(route); setError(''); setModal('detail')
-    if (drivers.length === 0) await loadDrivers()
+    if (drivers.length === 0) await loadDrivers().catch(() => {})
   }
 
   const refreshSelected = async (id) => {
@@ -326,7 +335,7 @@ export default function RoutesPage() {
           <h1 className="page-title">Hojas de Ruta</h1>
           <p className="page-subtitle">Organización de repartos</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva hoja</button>
+        {canWrite && <button className="btn btn-primary" onClick={openCreate}><Plus size={15} /> Nueva hoja</button>}
       </div>
 
       <div className="page-body">
@@ -501,17 +510,21 @@ export default function RoutesPage() {
                   <div className="text-muted text-sm">Fecha: <strong style={{ color: 'var(--text)' }}>{fmtDate(selected.date)}</strong></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className="text-muted text-sm">Repartidor:</span>
-                    <select className="form-select" style={{ fontSize: 12, padding: '3px 8px', width: 'auto' }}
-                      value={selected.driver || ''}
-                      onChange={async e => {
-                        try {
-                          const r = await routesApi.update(selected.id, { driver: e.target.value || null })
-                          setSelected(r.data); loadRoutes()
-                        } catch {}
-                      }}>
-                      <option value="">Sin asignar</option>
-                      {drivers.map(d => <option key={d.id} value={d.id}>{driverLabel(d)}</option>)}
-                    </select>
+                    {canWrite ? (
+                      <select className="form-select" style={{ fontSize: 12, padding: '3px 8px', width: 'auto' }}
+                        value={selected.driver || ''}
+                        onChange={async e => {
+                          try {
+                            const r = await routesApi.update(selected.id, { driver: e.target.value || null })
+                            setSelected(r.data); loadRoutes()
+                          } catch (err) { setError(err.response?.data?.error || err.response?.data?.detail || 'No se pudo cambiar el repartidor') }
+                        }}>
+                        <option value="">Sin asignar</option>
+                        {drivers.map(d => <option key={d.id} value={d.id}>{driverLabel(d)}</option>)}
+                      </select>
+                    ) : (
+                      <strong className="text-sm">{selected.driver_name || 'Sin asignar'}</strong>
+                    )}
                   </div>
                   {selected.notes && <div className="text-muted text-sm">{selected.notes}</div>}
                 </div>
@@ -526,7 +539,7 @@ export default function RoutesPage() {
                       </button>
                     </>
                   )}
-                  {selected.status === 'draft' && (
+                  {canWrite && selected.status === 'draft' && (
                     <>
                       <button className="btn btn-secondary btn-sm" onClick={openAddOrders}>
                         <Plus size={13} /> Agregar pedidos
@@ -539,7 +552,7 @@ export default function RoutesPage() {
                       </button>
                     </>
                   )}
-                  {selected.status === 'in_progress' && (
+                  {canWrite && selected.status === 'in_progress' && (
                     <>
                       <button className="btn btn-primary btn-sm" onClick={() => changeStatus('completed')}>
                         Finalizar
@@ -549,7 +562,7 @@ export default function RoutesPage() {
                       </button>
                     </>
                   )}
-                  {selected.status === 'cancelled' && (
+                  {canWrite && selected.status === 'cancelled' && (
                     <button className="btn btn-secondary btn-sm" onClick={() => changeStatus('draft')}>
                       Rehabilitar
                     </button>
@@ -607,7 +620,7 @@ export default function RoutesPage() {
                                       onClick={async () => { const _r = await svgToPngDataUrl(logoSvg, pdfLogoWidth * 8); const p = _r ? { ..._r, pdfW: pdfLogoWidth } : null; downloadSingleReceipt(item, selected.date, selected.driver_name, selected.route_number, p) }}>
                                       <FileDown size={12} />
                                     </button>
-                                    {selected.status === 'draft' && (
+                                    {canWrite && selected.status === 'draft' && (
                                       <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }}
                                         title="Quitar de la hoja" onClick={() => removeItem(item.id)}>
                                         <Trash2 size={12} />

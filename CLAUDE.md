@@ -103,6 +103,9 @@ docker compose exec backend python manage.py test apps.orders.test_delivery   # 
 - **`SettingsPage.jsx`**: SVG upload + preview, sliders for `logo_width` (60–300px) and `pdf_logo_width` (10–80mm), saves to PATCH `/api/users/config/`
 - **`OrdersPage.jsx`**: `CustomerCombobox` for filtered customer search; shows `last_order_date`; "Habilitar productos" modal when a customer has no enabled products
 
+### Read-only users
+Pages hide every write control (create, edit, import, status changes, row actions) unless `usePermissions().can('<section>', 'write')`; exports, PDFs and detail views stay visible. Use the section of the **endpoint** the control calls (e.g. "Registrar pago" in OrdersPage → `payments`, "Habilitar productos" → `customers`). Data a non-admin page needs must come from an endpoint guarded by that section — never from admin-only `/api/users/` (see `routes/drivers/`). The backend still enforces everything via `SectionPermission`; hiding is UX only.
+
 ### Pagination gotcha
 ViewSets that feed dropdowns or full pickers **must** set `pagination_class = None` (e.g. `CustomerViewSet`, `ProductViewSet`, `ZoneViewSet`). The global default is 20 items — easy to miss for lists that seem short but grow.
 
@@ -134,6 +137,7 @@ GET/POST   /api/orders/price-lists/
 GET/POST   /api/orders/routes/            # delivery routes (HR-XXXXXXXX)
 GET        /api/orders/routes/available_orders/
 POST       /api/orders/routes/{id}/change_status/
+GET        /api/orders/routes/drivers/       # active drivers; uses the routes section permission (not admin-only /api/users/)
 POST       /api/orders/routes/{id}/add_orders/
 POST       /api/orders/routes/{id}/remove_item/
 POST       /api/orders/routes/{id}/update_item/

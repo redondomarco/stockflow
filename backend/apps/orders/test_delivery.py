@@ -199,3 +199,43 @@ class DeliveryRouteTests(DeliveryTestBase):
         self.assertIsNone(res.data['driver'])
         self.assertEqual(res.data['id'], route_id)
         self.assertEqual(res.data['items_count'], 1)
+
+
+class RouteDriversTests(APITestCase):
+    """La lista de repartidores debe estar disponible para quien gestiona hojas de ruta,
+    no solo para administradores (antes se usaba /api/users/ y "Nueva hoja" no abría)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('logistica', password='x')
+        self.client.force_authenticate(self.user)
+        self.driver = User.objects.create_user('chofer', password='x', first_name='Juan', email='j@example.com')
+        self.driver.profile.is_driver = True
+        self.driver.profile.save()
+        inactive = User.objects.create_user('ex_chofer', password='x', is_active=False)
+        inactive.profile.is_driver = True
+        inactive.profile.save()
+
+    def set_routes_permission(self, level):
+        self.user.profile.permissions['routes'] = level
+        self.user.profile.save()
+
+    def test_non_admin_with_routes_access_gets_active_drivers_only(self):
+        self.assertEqual(self.client.get('/api/users/').status_code, 403)
+        res = self.client.get('/api/orders/routes/drivers/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data, [{'id': self.driver.id, 'username': 'chofer', 'first_name': 'Juan', 'last_name': ''}])
+
+    def test_read_only_can_list_but_not_create(self):
+        self.set_routes_permission('read')
+        self.assertEqual(self.client.get('/api/orders/routes/drivers/').status_code, 200)
+        res = self.client.post('/api/orders/routes/', {'date': date.today().isoformat()}, format='json')
+        self.assertEqual(res.status_code, 403)
+
+    def test_hidden_section_cannot_list_drivers(self):
+        self.set_routes_permission('hidden')
+        self.assertEqual(self.client.get('/api/orders/routes/drivers/').status_code, 403)
+
+    def test_non_admin_with_write_can_create_route_with_driver(self):
+        res = self.client.post('/api/orders/routes/', {'date': date.today().isoformat(), 'driver': self.driver.id}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['driver_name'], 'Juan')

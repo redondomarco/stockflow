@@ -137,6 +137,7 @@ export const routesApi = {
   update: (id, data) => api.patch(`/orders/routes/${id}/`, data),
   delete: (id) => api.delete(`/orders/routes/${id}/`),
   availableOrders: () => api.get('/orders/routes/available_orders/'),
+  drivers: () => api.get('/orders/routes/drivers/'),
   changeStatus: (id, status) => api.post(`/orders/routes/${id}/change_status/`, { status }),
   addOrders: (id, items) => api.post(`/orders/routes/${id}/add_orders/`, { items }),
   removeItem: (id, itemId) => api.post(`/orders/routes/${id}/remove_item/`, { item_id: itemId }),

@@ -682,6 +682,19 @@ class DeliveryRouteViewSet(viewsets.ModelViewSet):
         return self._route_response(route)
 
     @action(detail=False, methods=['get'])
+    def drivers(self, request):
+        """Repartidores activos para asignar a una hoja. Usa el permiso de la sección
+        hojas de ruta (no /api/users/, que es solo para administradores)."""
+        users = (
+            User.objects.filter(is_active=True, profile__is_driver=True)
+            .order_by('first_name', 'last_name', 'username')
+        )
+        return Response([
+            {'id': u.id, 'username': u.username, 'first_name': u.first_name, 'last_name': u.last_name}
+            for u in users
+        ])
+
+    @action(detail=False, methods=['get'])
     def available_orders(self, request):
         """Pedidos pendientes/parciales que no están en ninguna hoja activa."""
         active_order_ids = DeliveryRouteItem.objects.filter(

@@ -5,7 +5,11 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
-ENV VITE_API_URL=/api
+# Historial de cambios (pantalla Acerca de): vite.config.js lo busca en ../CHANGELOG.md
+COPY CHANGELOG.md /CHANGELOG.md
+# Versión instalada (la pasa `make deploy` desde el tag de git)
+ARG APP_VERSION=dev
+ENV VITE_API_URL=/api VITE_APP_VERSION=$APP_VERSION
 RUN npm run build
 
 FROM nginx:1.27-alpine

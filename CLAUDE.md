@@ -12,6 +12,9 @@ StockFlow is a full-stack inventory/order management system for a small distribu
 - **Maps**: Leaflet + OpenStreetMap/Nominatim (no API key)
 - **PDFs**: jsPDF + jspdf-autotable
 
+## Releases and CHANGELOG
+Every release gets a user-facing entry at the top of `CHANGELOG.md` (`## vX.Y.Z — AAAA-MM-DD` + `- ` bullets, Spanish, written for app users, `**bold**` allowed) **before** tagging. The file is bundled into the frontend at build time (`@changelog?raw`, alias in `vite.config.js`; `nginx/Dockerfile` copies it to `/CHANGELOG.md`) and shown in Sistema → Acerca de (admin only). The installed version comes from `APP_VERSION`, which the Makefile exports from `git describe --tags` — so deploy with `make deploy` after tagging (a plain `docker compose up --build` shows "dev").
+
 ## Running the project
 
 Config and secrets live in `.env` (not versioned; copy `.env.example`). `SECRET_KEY` and `POSTGRES_PASSWORD` are required.

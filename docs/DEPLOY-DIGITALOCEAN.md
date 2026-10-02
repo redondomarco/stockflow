@@ -170,7 +170,7 @@ docker compose version      # debe ser v2.24 o superior
 cd ~
 git clone https://github.com/redondomarco/stockflow.git
 cd stockflow
-git checkout v1.0.10       # versión a instalar (git tag -l lista las disponibles)
+git checkout v1.0.11       # versión a instalar (git tag -l lista las disponibles)
 ```
 
 ### 4.2 Configuración (`.env`)

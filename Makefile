@@ -1,4 +1,6 @@
 DC = docker compose
+# Versión que se muestra en Sistema → Acerca de (tag de git; "-dirty" si hay cambios sin commitear)
+export APP_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 DC_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
 .PHONY: start stop restart build deploy logs shell-backend shell-db migrate reset \

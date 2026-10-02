@@ -23,6 +23,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./CHANGELOG.md:/CHANGELOG.md:ro
     environment:
       - VITE_API_URL=/api
     ports:

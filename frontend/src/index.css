@@ -885,11 +885,92 @@ tbody tr:hover {
   .form-grid,
   .form-grid-3 { grid-template-columns: 1fr; }
 
-  /* Algunas pantallas fijan columnas con estilos inline */
-  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  /* Algunas pantallas fijan columnas con estilos inline: en pantallas chicas van las
+     que entren (los montos grandes no caben en dos columnas de 390px) */
+  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }
   .two-col-grid { grid-template-columns: 1fr !important; }
 
   .modal-overlay { padding: 8px; }
   .modal-header, .modal-footer { padding: 14px 16px; }
   .modal-body { padding: 16px; }
+}
+
+/* ── Móvil: tablas como tarjetas (opcional, botón en la barra superior) ─── */
+/* Las tablas marcadas con data-card-table y las etiquetas data-label las pone
+   components/cardTables.js; en escritorio y en modo tabla no aplica nada. */
+.mobile-view-btn { display: none; }
+
+@media (max-width: 900px) {
+  .mobile-view-btn {
+    display: flex;
+    margin-left: auto;
+    padding: 8px;
+  }
+
+  .view-cards table[data-card-table],
+  .view-cards table[data-card-table] > tbody,
+  .view-cards table[data-card-table] > tbody > tr,
+  .view-cards table[data-card-table] > tbody > tr > td {
+    display: block;
+    width: 100%;
+  }
+
+  .view-cards table[data-card-table] > thead { display: none; }
+
+  .view-cards table[data-card-table] > tbody { padding: 0; }
+
+  .view-cards table[data-card-table] > tbody > tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    margin-bottom: 10px;
+    background: var(--bg);
+  }
+
+  .view-cards table[data-card-table] > tbody > tr:last-child { margin-bottom: 0; }
+
+  .view-cards table[data-card-table] > tbody > tr > td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right !important;  /* algunas celdas fijan la alineación inline */
+  }
+
+  .view-cards table[data-card-table] > tbody > tr > td:last-child { border-bottom: none; }
+
+  /* El valor puede ocupar varias líneas; los grupos de botones pasan a otra línea si no entran */
+  .view-cards table[data-card-table] > tbody > tr > td > * { min-width: 0; }
+  .view-cards table[data-card-table] > tbody > tr > td > .flex,
+  .view-cards table[data-card-table] > tbody > tr > td > div[style*="display: flex"] {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .view-cards table[data-card-table] > tbody > tr > td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Columnas sin título (acciones, flechas): el contenido va a la derecha, sin etiqueta */
+  .view-cards table[data-card-table] > tbody > tr > td[data-label=""] { justify-content: flex-end; }
+  .view-cards table[data-card-table] > tbody > tr > td[data-label=""]::before { content: none; }
+
+  /* Celdas que abarcan toda la fila (estado vacío, detalle desplegado): bloque normal */
+  .view-cards table[data-card-table] > tbody > tr > td[colspan] {
+    display: block;
+    text-align: left !important;
+  }
+
+  .view-cards table[data-card-table] > tbody > tr:has(> td[colspan]:only-child) {
+    border-style: dashed;
+  }
 }

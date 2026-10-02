@@ -106,6 +106,9 @@ docker compose exec backend python manage.py test apps.orders.test_delivery   # 
 ### Read-only users
 Pages hide every write control (create, edit, import, status changes, row actions) unless `usePermissions().can('<section>', 'write')`; exports, PDFs and detail views stay visible. Use the section of the **endpoint** the control calls (e.g. "Registrar pago" in OrdersPage → `payments`, "Habilitar productos" → `customers`). Data a non-admin page needs must come from an endpoint guarded by that section — never from admin-only `/api/users/` (see `routes/drivers/`). The backend still enforces everything via `SectionPermission`; hiding is UX only.
 
+### Mobile (≤ 900px)
+`Layout.jsx` hides the sidebar behind a ☰ top bar (closes on navigation, backdrop, ✕, Escape). The top bar also has an optional **cards view** toggle (default: table; stored per device in `localStorage` `stockflow:mobile-view`). In cards mode `components/cardTables.js` marks the main table of each page (`data-card-table`; not tables inside `.modal` or nested tables) and copies each column header into its cells' `data-label`; CSS in `index.css` renders each row as a card. New pages get it for free: give action columns an empty `<th>` and they render label-less at the card's foot.
+
 ### Pagination gotcha
 ViewSets that feed dropdowns or full pickers **must** set `pagination_class = None` (e.g. `CustomerViewSet`, `ProductViewSet`, `ZoneViewSet`). The global default is 20 items — easy to miss for lists that seem short but grow.
 

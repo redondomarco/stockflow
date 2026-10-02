@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, usePermissions } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
-  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin, Menu, X
+  CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin, Menu, X,
+  LayoutGrid, Table2
 } from 'lucide-react'
+import { labelTables, loadMobileView, saveMobileView } from './cardTables'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -42,6 +44,26 @@ export default function Layout() {
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
   }, [navOpen])
 
+  // Móvil: tablas como tarjetas (opcional; por defecto tabla, preferencia guardada en el dispositivo)
+  const [mobileView, setMobileView] = useState(loadMobileView)
+  const mainRef = useRef(null)
+  const toggleMobileView = () => {
+    const next = mobileView === 'cards' ? 'table' : 'cards'
+    setMobileView(next)
+    saveMobileView(next)
+  }
+  useEffect(() => {
+    if (mobileView !== 'cards') return
+    // Las páginas cargan datos y re-renderizan: se re-etiquetan las tablas ante cada cambio
+    const root = mainRef.current
+    let frame
+    const run = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => labelTables(root)) }
+    run()
+    const observer = new MutationObserver(run)
+    observer.observe(root, { childList: true, subtree: true })
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [mobileView])
+
   const handleLogout = () => { logout(); navigate('/login') }
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'SF'
@@ -58,13 +80,18 @@ export default function Layout() {
   })
 
   return (
-    <div className={`app-layout${navOpen ? ' nav-open' : ''}`}>
+    <div className={`app-layout${navOpen ? ' nav-open' : ''}${mobileView === 'cards' ? ' view-cards' : ''}`}>
       <header className="mobile-topbar">
         <button className="btn btn-ghost mobile-menu-btn" onClick={() => setNavOpen(true)}
           aria-label="Abrir menú" aria-expanded={navOpen} aria-controls="sidebar">
           <Menu size={20} />
         </button>
         <span className="mobile-topbar-title">StockFlow</span>
+        <button className="btn btn-ghost mobile-view-btn" onClick={toggleMobileView} aria-pressed={mobileView === 'cards'}
+          title={mobileView === 'cards' ? 'Ver listas como tabla' : 'Ver listas como tarjetas'}
+          aria-label={mobileView === 'cards' ? 'Ver listas como tabla' : 'Ver listas como tarjetas'}>
+          {mobileView === 'cards' ? <Table2 size={18} /> : <LayoutGrid size={18} />}
+        </button>
       </header>
 
       <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />
@@ -125,7 +152,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" ref={mainRef}>
         <Outlet />
       </main>
     </div>

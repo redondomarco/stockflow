@@ -182,3 +182,33 @@ class NegativeStockStatsTests(ProductTestBase):
         res = self.client.get('/api/products/stats/')
         self.assertEqual(res.data['out_of_stock_count'], 1)
         self.assertIn('N1', [p['sku'] for p in self.client.get('/api/products/low_stock/').data])
+
+
+class BundleFieldsBlankTests(ProductTestBase):
+    """El formulario manda "" en los campos de caja de un producto no agrupado;
+    antes bundle_quantity respondía "Introduzca un número entero válido"."""
+
+    BLANK_BUNDLE = {'bundle_child': '', 'bundle_quantity': '', 'bundle_unit_weight': '', 'bundle_unit_price': ''}
+
+    def test_editing_non_bundle_product_with_blank_bundle_fields(self):
+        res = self.client.patch(f'/api/products/{self.product.id}/', {'name': 'Tapa nueva', **self.BLANK_BUNDLE}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, 'Tapa nueva')
+        self.assertIsNone(self.product.bundle_quantity)
+        self.assertIsNone(self.product.bundle_child)
+
+    def test_creating_non_bundle_product_with_blank_bundle_fields(self):
+        res = self.client.post('/api/products/', {'name': 'Nuevo', 'sku': 'N2', 'price': '10', **self.BLANK_BUNDLE}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+
+    def test_bundle_values_are_still_saved(self):
+        res = self.client.patch(f'/api/products/{self.product.id}/', {
+            'is_bundle': True, 'bundle_child': '', 'bundle_quantity': '6', 'bundle_unit_price': '20', 'bundle_unit_weight': '',
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data['bundle_quantity'], res.data['price']), (6, '120.00'))
+
+    def test_invalid_quantity_is_still_rejected(self):
+        res = self.client.patch(f'/api/products/{self.product.id}/', {'bundle_quantity': 'abc'}, format='json')
+        self.assertEqual(res.status_code, 400)

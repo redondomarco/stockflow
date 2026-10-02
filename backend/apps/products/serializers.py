@@ -39,6 +39,18 @@ class ProductSerializer(serializers.ModelSerializer):
             'is_active', 'is_low_stock', 'margin', 'created_at', 'updated_at'
         ]
 
+    # Campos de producto agrupado (caja): opcionales; el formulario los envía como ""
+    # cuando el producto no es agrupado, y "" no es un entero válido para DRF.
+    BLANK_AS_NULL = ('bundle_child', 'bundle_quantity', 'bundle_unit_weight', 'bundle_unit_price')
+
+    def to_internal_value(self, data):
+        if hasattr(data, 'copy') and any(data.get(f) == '' for f in self.BLANK_AS_NULL):
+            data = data.copy()
+            for field in self.BLANK_AS_NULL:
+                if data.get(field) == '':
+                    data[field] = None
+        return super().to_internal_value(data)
+
 
 class StockMovementSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)

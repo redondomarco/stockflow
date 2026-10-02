@@ -16,6 +16,8 @@ class SystemConfig(models.Model):
     ]
 
     logo_svg = models.TextField(blank=True)
+    # Favicon como data URL (data:image/png;base64,...); vacío = ícono por defecto
+    favicon = models.TextField(blank=True)
     logo_width = models.PositiveIntegerField(default=140)
     pdf_logo_width = models.PositiveIntegerField(default=35)
     OVERPAYMENT_POLICY_CHOICES = [

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, X, Save, Settings, Package, CreditCard, RotateCcw, ShieldCheck } from 'lucide-react'
+import { Upload, X, Save, Settings, Package, CreditCard, RotateCcw, ShieldCheck, Image } from 'lucide-react'
 import { useConfig } from '../context/ConfigContext'
 import api from '../services/api'
 
@@ -122,9 +122,118 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <FaviconCard />
+
         <PolicySettings />
       </div>
     </>
+  )
+}
+
+const FAVICON_MAX_KB = 100
+const FAVICON_TYPES = ['image/svg+xml', 'image/png', 'image/x-icon', 'image/vnd.microsoft.icon']
+
+// Actualiza el ícono de la pestaña sin recargar (el ?v= evita la copia en caché)
+function refreshTabIcon() {
+  const link = document.querySelector('link[rel="icon"]')
+  if (link) link.href = `/api/users/favicon/?v=${Date.now()}`
+}
+
+function FaviconCard() {
+  const [saved, setSaved] = useState(null)       // data URL guardado ('' = ícono por defecto)
+  const [preview, setPreview] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
+  const fileRef = useRef()
+
+  useEffect(() => {
+    api.get('/users/config/').then(r => {
+      setSaved(r.data.favicon || '')
+      setPreview(r.data.favicon || '')
+    }).catch(() => setSaved(''))
+  }, [])
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    fileRef.current.value = ''
+    if (!file) return
+    // Algunos sistemas no informan el tipo de los .ico
+    const type = file.type || (file.name.toLowerCase().endsWith('.ico') ? 'image/x-icon' : '')
+    if (!FAVICON_TYPES.includes(type)) {
+      setMessage({ type: 'danger', text: 'El favicon debe ser SVG, PNG o ICO.' }); return
+    }
+    if (file.size > FAVICON_MAX_KB * 1024) {
+      setMessage({ type: 'danger', text: `El archivo supera ${FAVICON_MAX_KB} KB.` }); return
+    }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      // Normaliza el tipo en el data URL (los .ico a veces llegan como application/octet-stream)
+      const base64 = String(ev.target.result).split(',')[1]
+      setPreview(`data:${type};base64,${base64}`)
+      setMessage(null)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const save = async (value) => {
+    setSaving(true); setMessage(null)
+    try {
+      await api.patch('/users/config/', { favicon: value })
+      setSaved(value); setPreview(value)
+      refreshTabIcon()
+      setMessage({ type: 'success', text: value ? 'Favicon guardado.' : 'Se restauró el ícono por defecto.' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (e) {
+      setMessage({ type: 'danger', text: e.response?.data?.error || 'Error al guardar' })
+    } finally { setSaving(false) }
+  }
+
+  if (saved === null) return null
+  const shown = preview || '/api/users/favicon/'
+  const changed = preview !== saved
+
+  return (
+    <div className="card" style={{ maxWidth: 600, marginTop: 20 }}>
+      <div style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <Image size={16} style={{ color: 'var(--accent)' }} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Favicon</span>
+        </div>
+
+        {message && <div className={`alert alert-${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, padding: 16, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <img src={shown} alt="Favicon" width={48} height={48} style={{ objectFit: 'contain' }} />
+          <img src={shown} alt="" width={32} height={32} style={{ objectFit: 'contain' }} />
+          <img src={shown} alt="" width={16} height={16} style={{ objectFit: 'contain' }} />
+          <span className="text-muted text-sm">
+            {preview ? (changed ? 'Vista previa (sin guardar)' : 'Favicon actual') : 'Ícono por defecto'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={() => fileRef.current.click()} disabled={saving}>
+            <Upload size={14} /> Cargar imagen
+          </button>
+          <input ref={fileRef} type="file" accept=".svg,.png,.ico,image/svg+xml,image/png,image/x-icon" style={{ display: 'none' }} onChange={handleFile} />
+          {saved && (
+            <button className="btn btn-ghost" onClick={() => save('')} disabled={saving} style={{ color: 'var(--red)' }}>
+              <X size={14} /> Usar ícono por defecto
+            </button>
+          )}
+          {changed && (
+            <button className="btn btn-primary" onClick={() => save(preview)} disabled={saving} style={{ marginLeft: 'auto' }}>
+              <Save size={14} /> {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          )}
+        </div>
+
+        <p className="text-muted text-sm" style={{ marginTop: 12 }}>
+          Ícono de la pestaña del navegador y de los accesos directos. SVG, PNG o ICO de hasta {FAVICON_MAX_KB} KB;
+          idealmente cuadrado (por ejemplo 64×64 o 512×512).
+        </p>
+      </div>
+    </div>
   )
 }
 

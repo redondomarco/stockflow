@@ -83,7 +83,7 @@ docker compose exec backend python manage.py test apps.orders.test_delivery   # 
 - **`SectionPermission`** (in `users/permissions.py`): custom DRF permission class applied to all ViewSets via `permission_classes = [IsAuthenticated, SectionPermission]` and a `permission_section = '<section>'` class attribute. `hidden` → 403; `read` + non-safe method → 403; superusers bypass all checks
 - Section names used: `products`, `stock`, `orders`, `payments`, `routes`, `customers`, `price_lists`
 - `UserViewSet`: CRUD + `me`, `export_csv`, `import_csv` — only `me` available to non-admin
-- **`SystemConfig`**: singleton accessed via `SystemConfig.get()`; fields: `logo_svg` (text), `logo_width` (px, default 140), `pdf_logo_width` (mm, default 35), `stock_policy`, `overpayment_policy`, `cancelled_order_payments`, `payment_approval`. GET via `/api/users/config/`, PATCH (superuser only).
+- **`SystemConfig`**: singleton accessed via `SystemConfig.get()`; fields: `logo_svg` (text), `logo_width` (px, default 140), `pdf_logo_width` (mm, default 35), `favicon` (data URL, SVG/PNG/ICO ≤ 100 KB, validated in `users/favicon.py`), `stock_policy`, `overpayment_policy`, `cancelled_order_payments`, `payment_approval`. GET via `/api/users/config/`, PATCH (superuser only).
 
 ## Frontend architecture (`frontend/src/`)
 
@@ -150,6 +150,7 @@ GET/POST   /api/payments/
 GET/POST   /api/users/                    # admin-only CRUD
 GET        /api/users/me/
 GET        /api/users/config/
+GET        /api/users/favicon/               # public (no auth); SystemConfig.favicon data URL or default "SF" SVG; ETag + sandbox CSP
 PATCH      /api/users/config/             # superuser only
 ```
 

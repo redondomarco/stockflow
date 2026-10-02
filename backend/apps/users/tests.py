@@ -106,3 +106,55 @@ class SecurityHeadersTests(APITestCase):
         # Referer: no usar same-origin ni no-referrer (ver también nginx/nginx.conf).
         res = self.client.get('/api/users/config/')
         self.assertEqual(res['Referrer-Policy'], 'strict-origin-when-cross-origin')
+
+
+class FaviconTests(APITestCase):
+    PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser('jefe', password='x')
+
+    def set_favicon(self, value, user=None):
+        self.client.force_authenticate(user or self.admin)
+        res = self.client.patch('/api/users/config/', {'favicon': value}, format='json')
+        self.client.force_authenticate(None)
+        return res
+
+    def test_default_icon_is_public(self):
+        res = self.client.get('/api/users/favicon/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'image/svg+xml')
+        self.assertIn(b'SF', res.content)
+        self.assertIn('sandbox', res['Content-Security-Policy'])
+
+    def test_configured_favicon_is_served(self):
+        self.assertEqual(self.set_favicon(self.PNG).status_code, 200)
+        res = self.client.get('/api/users/favicon/')
+        self.assertEqual(res['Content-Type'], 'image/png')
+        self.assertTrue(res.content.startswith(b'\x89PNG'))
+
+    def test_etag_revalidation(self):
+        etag = self.client.get('/api/users/favicon/')['ETag']
+        self.assertEqual(self.client.get('/api/users/favicon/', HTTP_IF_NONE_MATCH=etag).status_code, 304)
+        self.set_favicon(self.PNG)
+        self.assertEqual(self.client.get('/api/users/favicon/', HTTP_IF_NONE_MATCH=etag).status_code, 200)
+
+    def test_invalid_favicons_are_rejected(self):
+        too_big = 'data:image/png;base64,' + 'A' * (140 * 1024)
+        for value in ('no-es-un-data-url', 'data:text/html;base64,PGgxPmhpPC9oMT4=', too_big):
+            with self.subTest(value=value[:30]):
+                self.assertEqual(self.set_favicon(value).status_code, 400)
+
+    def test_clearing_restores_default(self):
+        self.set_favicon(self.PNG)
+        self.assertEqual(self.set_favicon('').status_code, 200)
+        self.assertEqual(self.client.get('/api/users/favicon/')['Content-Type'], 'image/svg+xml')
+
+    def test_only_superuser_can_change(self):
+        user = User.objects.create_user('vendedor', password='x')
+        self.assertEqual(self.set_favicon(self.PNG, user=user).status_code, 403)
+
+    def test_works_with_invalid_token(self):
+        # La pantalla de login puede tener un token vencido guardado: el favicon no debe fallar
+        res = self.client.get('/api/users/favicon/', HTTP_AUTHORIZATION='Bearer vencido')
+        self.assertEqual(res.status_code, 200)

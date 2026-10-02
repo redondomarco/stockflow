@@ -5,11 +5,12 @@ from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from django.contrib.auth.models import User
 from .models import UserProfile, SystemConfig, default_permissions
 from .serializers import UserSerializer
+from .favicon import FaviconError, favicon_response, parse_favicon
 
 SECTIONS = ['products', 'stock', 'orders', 'payments', 'customers', 'price_lists', 'routes']
 VALID_LEVELS = {'write', 'read', 'hidden'}
@@ -158,6 +159,7 @@ class SystemConfigView(APIView):
             'logo_svg': config.logo_svg,
             'logo_width': config.logo_width,
             'pdf_logo_width': config.pdf_logo_width,
+            'favicon': config.favicon,
             **{field: getattr(config, field) for field in cls.POLICY_FIELDS},
         }
 
@@ -174,6 +176,14 @@ class SystemConfigView(APIView):
             config.logo_width = int(request.data['logo_width'])
         if 'pdf_logo_width' in request.data:
             config.pdf_logo_width = int(request.data['pdf_logo_width'])
+        if 'favicon' in request.data:
+            favicon = (request.data['favicon'] or '').strip()
+            if favicon:
+                try:
+                    parse_favicon(favicon)
+                except FaviconError as e:
+                    return Response({'error': str(e)}, status=400)
+            config.favicon = favicon
         for field, choices in self.POLICY_FIELDS.items():
             if field not in request.data:
                 continue
@@ -183,3 +193,12 @@ class SystemConfigView(APIView):
             setattr(config, field, value)
         config.save()
         return Response(self._serialize(config))
+
+
+class FaviconView(APIView):
+    """Favicon público (también lo necesita la pantalla de login, sin sesión)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return favicon_response(request, SystemConfig.get().favicon)

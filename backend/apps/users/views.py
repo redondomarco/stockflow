@@ -22,9 +22,14 @@ class UserViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action == 'me':
+        if self.action in ('me', 'heartbeat'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), IsAdminUser()]
+
+    @action(detail=False, methods=['post'])
+    def heartbeat(self, request):
+        """La app abierta avisa que sigue activa; la autenticación ya registró la actividad."""
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['get'])
     def me(self, request):

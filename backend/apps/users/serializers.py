@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import UserProfile, default_permissions
+from .presence import is_online
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -25,6 +26,11 @@ class UserSerializer(serializers.ModelSerializer):
         data['permissions'] = profile.permissions if profile else default_permissions()
         for flag in self.PROFILE_FLAGS:
             data[flag] = getattr(profile, flag) if profile else False
+        # Monitor de conectados (la lista de usuarios es solo para administradores)
+        last_seen = profile.last_seen if profile else None
+        data['last_seen'] = last_seen
+        data['last_login'] = instance.last_login
+        data['online'] = is_online(last_seen)
         return data
 
     def _save_profile(self, user, permissions, flags):

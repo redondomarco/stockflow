@@ -121,6 +121,7 @@ export const usersApi = {
   create: (data) => api.post('/users/', data),
   update: (id, data) => api.patch(`/users/${id}/`, data),
   delete: (id) => api.delete(`/users/${id}/`),
+  heartbeat: () => api.post('/users/heartbeat/'),
   exportCsv: () => api.get('/users/export_csv/', { responseType: 'blob' }),
   importCsv: (file) => {
     const form = new FormData()

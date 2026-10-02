@@ -59,6 +59,8 @@ class UserProfile(models.Model):
     can_approve_payments = models.BooleanField(
         default=False, help_text='Con aprobación restringida, puede aprobar, rechazar y reembolsar pagos'
     )
+    # Última actividad en la API (ver users/presence.py); se usa para ver quién está conectado
+    last_seen = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Perfil de usuario'

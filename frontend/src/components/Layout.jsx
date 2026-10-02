@@ -8,6 +8,7 @@ import {
   LayoutGrid, Table2
 } from 'lucide-react'
 import { labelTables, loadMobileView, saveMobileView } from './cardTables'
+import { usersApi } from '../services/api'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -63,6 +64,16 @@ export default function Layout() {
     observer.observe(root, { childList: true, subtree: true })
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
   }, [mobileView])
+
+  // Presencia: mientras la app está abierta y visible avisa al servidor cada 2 minutos
+  // (monitor de conectados en Usuarios). Cualquier otro request también cuenta como actividad.
+  useEffect(() => {
+    const beat = () => { if (document.visibilityState === 'visible') usersApi.heartbeat().catch(() => {}) }
+    beat()
+    const timer = setInterval(beat, 2 * 60 * 1000)
+    document.addEventListener('visibilitychange', beat)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', beat) }
+  }, [])
 
   const handleLogout = () => { logout(); navigate('/login') }
 

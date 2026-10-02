@@ -158,3 +158,61 @@ class FaviconTests(APITestCase):
         # La pantalla de login puede tener un token vencido guardado: el favicon no debe fallar
         res = self.client.get('/api/users/favicon/', HTTP_AUTHORIZATION='Bearer vencido')
         self.assertEqual(res.status_code, 200)
+
+
+class PresenceTests(APITestCase):
+    """Monitor de usuarios conectados: actividad registrada por la autenticación JWT."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser('jefe', password='x')
+        self.user = User.objects.create_user('vendedor', password='clave-123')
+
+    def auth(self, user):
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}')
+
+    def users_by_name(self):
+        self.auth(self.admin)
+        return {u['username']: u for u in self.client.get('/api/users/').data}
+
+    def test_never_seen_user_is_offline(self):
+        data = self.users_by_name()['vendedor']
+        self.assertEqual((data['online'], data['last_seen'], data['last_login']), (False, None, None))
+
+    def test_heartbeat_marks_user_online(self):
+        self.auth(self.user)
+        self.assertEqual(self.client.post('/api/users/heartbeat/').status_code, 204)
+        self.assertTrue(self.users_by_name()['vendedor']['online'])
+
+    def test_any_authenticated_request_counts_as_activity(self):
+        self.auth(self.user)
+        self.client.get('/api/users/me/')
+        self.user.profile.refresh_from_db()
+        self.assertIsNotNone(self.user.profile.last_seen)
+
+    def test_inactive_for_more_than_window_is_offline(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        UserProfile.objects.filter(user=self.user).update(last_seen=timezone.now() - timedelta(minutes=6))
+        self.assertFalse(self.users_by_name()['vendedor']['online'])
+
+    def test_activity_is_written_at_most_once_per_minute(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        recent = timezone.now() - timedelta(seconds=10)
+        UserProfile.objects.filter(user=self.user).update(last_seen=recent)
+        self.auth(self.user)
+        self.client.post('/api/users/heartbeat/')
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.last_seen, recent)
+
+    def test_login_updates_last_login(self):
+        res = self.client.post('/api/token/', {'username': 'vendedor', 'password': 'clave-123'}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNotNone(self.users_by_name()['vendedor']['last_login'])
+
+    def test_only_admins_see_the_monitor(self):
+        self.auth(self.user)
+        self.assertEqual(self.client.get('/api/users/').status_code, 403)
+        self.client.credentials()
+        self.assertEqual(self.client.post('/api/users/heartbeat/').status_code, 401)

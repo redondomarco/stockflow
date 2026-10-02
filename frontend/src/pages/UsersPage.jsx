@@ -19,6 +19,19 @@ const defaultPermissions = () => Object.fromEntries(SECTIONS.map(s => [s.key, 'w
 
 const emptyForm = { username: '', email: '', password: '', first_name: '', last_name: '', is_active: true, is_driver: false, can_override_stock: false, can_approve_payments: false, permissions: defaultPermissions() }
 
+const displayName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
+
+// "Hace 12 min", "Hace 3 h", "Hace 2 días"; sin actividad registrada: "Nunca"
+function timeAgo(iso) {
+  if (!iso) return 'Nunca'
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 60) return `Hace ${Math.max(minutes, 1)} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `Hace ${hours} h`
+  const days = Math.floor(hours / 24)
+  return `Hace ${days} día${days === 1 ? '' : 's'}`
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -31,12 +44,20 @@ export default function UsersPage() {
   const [importResult, setImportResult] = useState(null)
   const fileRef = useRef()
 
-  const load = () => {
-    setLoading(true)
-    usersApi.list().then(r => setUsers(r.data)).finally(() => setLoading(false))
+  const load = (silent = false) => {
+    if (!silent) setLoading(true)
+    return usersApi.list().then(r => setUsers(r.data)).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
+
+  // Monitor de conectados: refresco silencioso cada 30 s mientras la pantalla está visible
+  useEffect(() => {
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') load(true).catch(() => {}) }, 30 * 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const online = users.filter(u => u.online)
 
   const openCreate = () => {
     setForm(emptyForm)
@@ -159,6 +180,20 @@ export default function UsersPage() {
             <button className="btn btn-ghost btn-sm" onClick={() => setImportResult(null)}><X size={14} /></button>
           </div>
         )}
+        {!loading && (
+          <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: online.length ? 'var(--green)' : 'var(--text-dim)', flexShrink: 0 }} />
+            <strong style={{ fontSize: 13 }}>
+              {online.length === 0 ? 'Nadie conectado en este momento'
+                : `${online.length} conectado${online.length === 1 ? '' : 's'} ahora:`}
+            </strong>
+            {online.length > 0 && <span style={{ fontSize: 13 }}>{online.map(u => displayName(u)).join(', ')}</span>}
+            <span className="text-muted text-sm" style={{ marginLeft: 'auto' }}>
+              En línea = actividad en los últimos 5 min · se actualiza cada 30 s
+            </span>
+          </div>
+        )}
+
         <div className="card">
           {loading ? <div className="loading"><div className="spinner" /></div> : (
             <div className="table-wrapper">
@@ -171,13 +206,14 @@ export default function UsersPage() {
                     <th>Rol</th>
                     <th>Repartidor</th>
                     <th>Estado</th>
+                    <th>Actividad</th>
                     <th>Permisos</th>
                     <th style={{ width: 80 }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.length === 0 && (
-                    <tr><td colSpan={7}>
+                    <tr><td colSpan={9}>
                       <div className="empty-state">
                         <UserCog className="empty-state-icon" />
                         <div className="empty-state-title">Sin usuarios</div>
@@ -201,6 +237,19 @@ export default function UsersPage() {
                         <span style={{ fontSize: 11, color: u.is_active ? 'var(--green)' : 'var(--red)' }}>
                           {u.is_active ? 'Activo' : 'Inactivo'}
                         </span>
+                      </td>
+                      <td title={u.last_seen ? `Última actividad: ${new Date(u.last_seen).toLocaleString('es-AR')}` : undefined}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: u.online ? 'var(--green)' : 'var(--text-dim)' }} />
+                          <span style={{ color: u.online ? 'var(--green)' : 'var(--text-muted)' }}>
+                            {u.online ? 'En línea' : timeAgo(u.last_seen)}
+                          </span>
+                        </div>
+                        {u.last_login && (
+                          <div className="text-muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                            Ingresó: {new Date(u.last_login).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                        )}
                       </td>
                       <td>
                         {u.is_superuser ? (

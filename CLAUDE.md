@@ -31,7 +31,7 @@ make makemigrations / migrate / shell-backend / shell-db / logs / reset
 | dev  | Backend API                      | http://localhost:8000/api |
 | dev  | PostgreSQL                       | 127.0.0.1:5432 |
 
-Public deployment (DigitalOcean, HTTPS): `docs/DEPLOY-DIGITALOCEAN.md`. Setting `COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml` in `.env` adds Caddy (automatic Let's Encrypt for `DOMAIN`) in front of nginx; `HTTPS=True` makes Django trust `X-Forwarded-Proto` and use secure cookies. nginx rate-limits `/api/token/` and `/admin/login/` (10/min per IP) and takes the client IP from Caddy's `X-Forwarded-For`. Backups: `make backup` / `make restore FILE=...` (`scripts/`).
+Public deployment (DigitalOcean, HTTPS): `docs/DEPLOY-DIGITALOCEAN.md`. Setting `COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml` in `.env` adds Caddy (automatic Let's Encrypt for `DOMAIN`) in front of nginx; `HTTPS=True` makes Django trust `X-Forwarded-Proto` and use secure cookies. nginx rate-limits `/api/token/` and `/admin/login/` (10/min per IP) and takes the client IP from Caddy's `X-Forwarded-For`. Backups: `make backup` / `make restore FILE=...` (`scripts/`). Restore drops and recreates the `public` schema and loads the dump in a single transaction (a failed restore leaves the DB untouched; the backend is always restarted and migrates forward), so backups taken before newer migrations restore fine.
 
 In production only nginx publishes a port; db, redis and backend are internal. `DEBUG` defaults to `False` and Django refuses to start without `SECRET_KEY` unless `DEBUG=True`.
 
@@ -131,6 +131,9 @@ GET/POST   /api/products/                 # products (sort_order, is_bundle, etc
 GET/POST   /api/products/categories/
 GET/POST   /api/products/suppliers/
 GET        /api/products/movements/
+GET        /api/products/intake/          # stock intake: shared usual product list (section `stock`)
+PUT        /api/products/intake/configure/  # save usual list {product_ids}
+POST       /api/products/intake/apply/    # batch intake {items:[{product,quantity}], reason}: atomic, one 'in' StockMovement per product
 GET        /api/products/export_csv/
 POST       /api/products/import_csv/
 

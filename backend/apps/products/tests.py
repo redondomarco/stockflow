@@ -212,3 +212,67 @@ class BundleFieldsBlankTests(ProductTestBase):
     def test_invalid_quantity_is_still_rejected(self):
         res = self.client.patch(f'/api/products/{self.product.id}/', {'bundle_quantity': 'abc'}, format='json')
         self.assertEqual(res.status_code, 400)
+
+
+class StockIntakeTests(ProductTestBase):
+    def setUp(self):
+        super().setUp()
+        self.p2 = Product.objects.create(name='Envase', sku='E1', price=Decimal('5'), stock=0)
+        self.p3 = Product.objects.create(name='Caja', sku='C1', price=Decimal('7'), stock=3)
+
+    def configure(self, ids):
+        return self.client.put('/api/products/intake/configure/', {'product_ids': ids}, format='json')
+
+    def apply(self, items, reason=''):
+        return self.client.post('/api/products/intake/apply/', {'items': items, 'reason': reason}, format='json')
+
+    def stocks(self):
+        return [Product.objects.get(pk=p.pk).stock for p in (self.product, self.p2, self.p3)]
+
+    def test_configure_and_list_keep_order(self):
+        res = self.configure([self.p3.id, self.product.id, self.p3.id])
+        self.assertEqual([p['sku'] for p in res.data], ['C1', 'T1'])
+        self.assertEqual([p['sku'] for p in self.client.get('/api/products/intake/').data], ['C1', 'T1'])
+
+    def test_inactive_products_are_hidden_and_rejected(self):
+        self.configure([self.product.id, self.p2.id])
+        self.p2.is_active = False
+        self.p2.save()
+        self.assertEqual([p['sku'] for p in self.client.get('/api/products/intake/').data], ['T1'])
+        self.assertEqual(self.configure([self.p2.id]).status_code, 400)
+
+    def test_apply_adds_stock_and_records_movements(self):
+        res = self.apply([{'product': self.product.id, 'quantity': 5}, {'product': self.p2.id, 'quantity': 12}], reason='Remito 0001-123')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['total_units'], 17)
+        self.assertEqual(self.stocks(), [15, 12, 3])
+        movements = StockMovement.objects.filter(movement_type='in').order_by('product_id')
+        self.assertEqual([(m.quantity, m.stock_before, m.stock_after) for m in movements], [(5, 10, 15), (12, 0, 12)])
+        self.assertTrue(all(m.reason == 'Ingreso de stock: Remito 0001-123' for m in movements))
+
+    def test_invalid_rows_reject_the_whole_intake(self):
+        for items in (
+            [{'product': self.product.id, 'quantity': 5}, {'product': self.p2.id, 'quantity': 0}],
+            [{'product': self.product.id, 'quantity': 5}, {'product': self.p2.id, 'quantity': 'x'}],
+            [{'product': self.product.id, 'quantity': 5}, {'product': 99999, 'quantity': 1}],
+            [{'product': self.product.id, 'quantity': 5}, {'product': self.product.id, 'quantity': 1}],
+            [],
+        ):
+            with self.subTest(items=items):
+                self.assertEqual(self.apply(items).status_code, 400)
+        self.assertEqual(self.stocks(), [10, 0, 3])
+        self.assertFalse(StockMovement.objects.exists())
+
+    def test_permissions_use_stock_section(self):
+        self.set_permission('stock', 'read')
+        self.assertEqual(self.client.get('/api/products/intake/').status_code, 200)
+        self.assertEqual(self.apply([{'product': self.product.id, 'quantity': 1}]).status_code, 403)
+        self.assertEqual(self.configure([self.product.id]).status_code, 403)
+        self.set_permission('stock', 'hidden')
+        self.assertEqual(self.client.get('/api/products/intake/').status_code, 403)
+
+    def test_intake_is_audited(self):
+        from apps.users.models import AuditLog
+        self.apply([{'product': self.product.id, 'quantity': 5}, {'product': self.p2.id, 'quantity': 12}])
+        log = AuditLog.objects.latest('id')
+        self.assertEqual((log.section, log.description), ('stock', 'Ingreso de stock · 2 productos, 17 unidades'))

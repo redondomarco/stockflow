@@ -17,6 +17,7 @@ import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
 import MapPage from './pages/MapPage'
 import AuditPage from './pages/AuditPage'
+import StockIntakePage from './pages/StockIntakePage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="products" element={<ProductsPage />} />
               <Route path="stock" element={<StockPage />} />
+              <Route path="stock-intake" element={<StockIntakePage />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="payments" element={<PaymentsPage />} />
               <Route path="customers" element={<CustomersPage />} />

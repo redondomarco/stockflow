@@ -43,6 +43,8 @@ ACTION_LABELS = {
     'add_orders': 'Pedidos agregados',
     'remove_item': 'Pedido quitado',
     'update_item': 'Nota editada',
+    'apply': 'Ingreso de stock',
+    'configure': 'Lista de ingreso de stock actualizada',
 }
 
 STATUS_LABELS = {
@@ -224,6 +226,9 @@ class AuditMiddleware:
             description = f'{label} · {object_type} {object_label}'.strip(' ·')
             if action == 'change_status' and body.get('status'):
                 description += f" → {STATUS_LABELS.get(body['status'], body['status'])}"
+            if action == 'apply' and success and isinstance(data, dict) and data.get('total_units'):
+                count = len(data.get('items') or [])
+                description += f" · {count} producto{'s' if count != 1 else ''}, {data['total_units']} unidades"
         if view_cls is not None and view_cls.__name__ == 'UserViewSet':
             section = 'users'
 

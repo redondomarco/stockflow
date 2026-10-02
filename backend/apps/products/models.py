@@ -106,3 +106,17 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f"{self.product.sku} - {self.movement_type} {self.quantity}"
+
+
+class StockIntakeItem(models.Model):
+    """Producto de la lista habitual de "Ingreso de stock" (compartida por todos los usuarios)."""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name='intake_item')
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'Producto de la lista de ingreso'
+        verbose_name_plural = 'Lista de ingreso de stock'
+        ordering = ['position', 'id']
+
+    def __str__(self):
+        return f'{self.position}: {self.product.sku}'

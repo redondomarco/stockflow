@@ -5,7 +5,7 @@ import { useConfig } from '../context/ConfigContext'
 import {
   LayoutDashboard, Package, BarChart3, ShoppingCart,
   CreditCard, Users, LogOut, Tag, FileText, AlertCircle, Truck, UserCog, Settings, MapPin, Menu, X,
-  LayoutGrid, Table2, History
+  LayoutGrid, Table2, History, PackagePlus
 } from 'lucide-react'
 import { labelTables, loadMobileView, saveMobileView } from './cardTables'
 import { usersApi } from '../services/api'
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { section: 'Inventario' },
   { to: '/products', icon: Package, label: 'Productos', perm: 'products' },
+  { to: '/stock-intake', icon: PackagePlus, label: 'Ingreso de stock', perm: 'stock' },
   { to: '/stock', icon: BarChart3, label: 'Movimientos', perm: 'stock' },
   { section: 'Ventas' },
   { to: '/orders', icon: ShoppingCart, label: 'Pedidos', perm: 'orders' },

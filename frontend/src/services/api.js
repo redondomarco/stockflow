@@ -130,6 +130,13 @@ export const usersApi = {
   },
 }
 
+// Ingreso de stock por lote (sección Stock)
+export const intakeApi = {
+  list: () => api.get('/products/intake/'),
+  configure: (productIds) => api.put('/products/intake/configure/', { product_ids: productIds }),
+  apply: (data) => api.post('/products/intake/apply/', data),
+}
+
 // Auditoría (solo superusuarios)
 export const auditApi = {
   list: (params) => api.get('/users/audit/', { params }),

@@ -11,7 +11,7 @@ from django.db.models import Count, DecimalField, F, Q, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import Category, Supplier, Product, StockMovement
+from .models import Category, Supplier, Product, StockIntakeItem, StockMovement
 from .serializers import (
     CategorySerializer, SupplierSerializer, ProductSerializer,
     StockMovementSerializer, StockAdjustmentSerializer
@@ -240,3 +240,82 @@ class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['product', 'movement_type']
     ordering = ['-created_at']
+
+
+class StockIntakeViewSet(viewsets.ViewSet):
+    """
+    Ingreso de stock por lote. La lista habitual de productos es compartida;
+    cada ingreso suma stock a varios productos en una sola transacción.
+      GET  /api/products/intake/            lista habitual (con stock actual)
+      PUT  /api/products/intake/configure/  guardar la lista habitual {product_ids}
+      POST /api/products/intake/apply/      ingresar {items: [{product, quantity}], reason}
+    """
+    permission_classes = [IsAuthenticated, SectionPermission]
+    permission_section = 'stock'
+
+    def list(self, request):
+        items = StockIntakeItem.objects.select_related(
+            'product__category', 'product__supplier', 'product__bundle_child'
+        ).filter(product__is_active=True)
+        return Response(ProductSerializer([it.product for it in items], many=True).data)
+
+    @action(detail=False, methods=['put'])
+    def configure(self, request):
+        ids = request.data.get('product_ids')
+        if not isinstance(ids, list):
+            return Response({'error': 'Indicá la lista de productos (product_ids).'}, status=400)
+        try:
+            ids = list(dict.fromkeys(int(i) for i in ids))  # sin repetidos, conservando el orden
+        except (TypeError, ValueError):
+            return Response({'error': 'Los productos deben indicarse por su id.'}, status=400)
+        existing = set(Product.objects.filter(id__in=ids, is_active=True).values_list('id', flat=True))
+        missing = [i for i in ids if i not in existing]
+        if missing:
+            return Response({'error': f'Productos inexistentes o dados de baja: {", ".join(map(str, missing))}.'}, status=400)
+        with transaction.atomic():
+            StockIntakeItem.objects.all().delete()
+            StockIntakeItem.objects.bulk_create(
+                StockIntakeItem(product_id=pid, position=pos) for pos, pid in enumerate(ids)
+            )
+        return self.list(request)
+
+    @action(detail=False, methods=['post'])
+    def apply(self, request):
+        items = request.data.get('items')
+        reason = (request.data.get('reason') or '').strip()[:200]
+        if not isinstance(items, list) or not items:
+            return Response({'error': 'Completá la cantidad de al menos un producto.'}, status=400)
+
+        quantities = {}
+        for idx, item in enumerate(items, start=1):
+            try:
+                product_id = int(item.get('product'))
+                quantity = int(item.get('quantity'))
+            except (AttributeError, TypeError, ValueError):
+                return Response({'error': f'Fila {idx}: producto y cantidad deben ser números enteros.'}, status=400)
+            if quantity <= 0:
+                return Response({'error': f'Fila {idx}: la cantidad debe ser mayor a cero.'}, status=400)
+            if product_id in quantities:
+                return Response({'error': f'Fila {idx}: el producto está repetido.'}, status=400)
+            quantities[product_id] = quantity
+
+        movement_reason = f'Ingreso de stock: {reason}' if reason else 'Ingreso de stock'
+        with transaction.atomic():
+            # Orden por id para bloquear siempre en el mismo orden (evita deadlocks)
+            products = {p.id: p for p in Product.objects.select_for_update().filter(id__in=quantities).order_by('id')}
+            invalid = [pid for pid in quantities if pid not in products or not products[pid].is_active]
+            if invalid:
+                return Response({'error': f'Productos inexistentes o dados de baja: {", ".join(map(str, invalid))}.'}, status=400)
+            result = []
+            for pid, quantity in quantities.items():
+                product = products[pid]
+                stock_before = product.stock
+                product.stock += quantity
+                product.save(update_fields=['stock', 'updated_at'])
+                StockMovement.objects.create(
+                    product=product, movement_type='in', quantity=quantity,
+                    stock_before=stock_before, stock_after=product.stock, reason=movement_reason,
+                )
+                result.append({'product': pid, 'sku': product.sku, 'name': product.name, 'quantity': quantity,
+                               'stock_before': stock_before, 'stock_after': product.stock})
+        return Response({'items': result, 'total_units': sum(quantities.values()), 'reason': reason}, status=201)

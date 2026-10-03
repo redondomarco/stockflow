@@ -2,22 +2,26 @@ import { useEffect, useState } from 'react'
 import { ordersApi } from '../services/api'
 import { useNavigate } from 'react-router-dom'
 import { Search, ArrowUpRight } from 'lucide-react'
+import PeriodSelector, { monthLabel, usePeriod } from '../components/PeriodSelector'
 
 function fmt(n) {
   return parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 export default function DebtDashboardPage() {
+  const [period, setPeriod] = usePeriod()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
 
+  // Con un mes elegido: solo la deuda generada por los pedidos de ese mes
   useEffect(() => {
-    ordersApi.debtDashboard()
+    setLoading(true)
+    ordersApi.debtDashboard(period ? { month: period } : undefined)
       .then(r => setData(r.data || []))
       .finally(() => setLoading(false))
-  }, [])
+  }, [period])
 
   const filtered = data.filter(d =>
     !search ||
@@ -34,8 +38,11 @@ export default function DebtDashboardPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard de deudas</h1>
-          <p className="page-subtitle">Clientes con saldo pendiente de cobro</p>
+          <p className="page-subtitle">
+            {period ? `Saldo pendiente de los pedidos de ${monthLabel(period)}` : 'Clientes con saldo pendiente de cobro'}
+          </p>
         </div>
+        <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
       <div className="page-body">

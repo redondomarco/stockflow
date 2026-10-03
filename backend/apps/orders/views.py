@@ -5,10 +5,10 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from apps.users.permissions import SectionPermission
+from apps.users.permissions import SectionPermission, can_view_section
 from django.db import transaction
 from django.db.models import Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncMonth
 from decimal import Decimal
 from apps.payments.models import Payment
 from django.utils import timezone
@@ -30,6 +30,7 @@ from .services import (
     enforce_stock_policy, add_order_items, remove_order_items, is_confirmed,
 )
 from apps.payments.services import handle_order_cancellation
+from .periods import last_months, month_bounds, month_range
 
 
 # Relaciones que usa OrderSerializer; precargarlas evita consultas por pedido.
@@ -230,8 +231,14 @@ class CustomerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def debt_dashboard(self, request):
         """Clientes con saldo pendiente (pedidos no anulados − pagos aprobados), calculado en una consulta."""
+        try:
+            period = month_range(request.query_params.get('month'))
+        except BusinessRuleError as e:
+            return e.response()
         money = DecimalField(max_digits=14, decimal_places=2)
         active_orders = Order.objects.filter(customer=OuterRef('pk')).exclude(status='cancelled')
+        if period:  # solo la deuda generada por los pedidos de ese mes
+            active_orders = active_orders.filter(created_at__gte=period[0], created_at__lt=period[1])
         billed = active_orders.values('customer').annotate(s=Sum('total')).values('s')
         order_count = active_orders.values('customer').annotate(c=Count('id')).values('c')
         paid = (
@@ -239,6 +246,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
             .exclude(order__status='cancelled')
             .values('order__customer').annotate(s=Sum('amount')).values('s')
         )
+        if period:
+            paid = paid.filter(order__created_at__gte=period[0], order__created_at__lt=period[1])
         customers = (
             Customer.objects.annotate(
                 total_billed=Coalesce(Subquery(billed, output_field=money), Value(Decimal('0')), output_field=money),
@@ -621,16 +630,71 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
+        """Resumen de pedidos; con ?month=AAAA-MM, solo los pedidos creados en ese mes."""
+        try:
+            period = month_range(request.query_params.get('month'))
+        except BusinessRuleError as e:
+            return e.response()
         orders = Order.objects.all()
+        if period:
+            orders = orders.filter(created_at__gte=period[0], created_at__lt=period[1])
 
-        return Response({
-            'total': orders.count(),
-            'pending': orders.filter(status='pending').count(),
-            'partial': orders.filter(status='partial').count(),
-            'delivered': orders.filter(status='delivered').count(),
-            'cancelled': orders.filter(status='cancelled').count(),
-            'total_revenue': float(orders.filter(status='delivered').aggregate(Sum('total'))['total__sum'] or 0),
-        })
+        totals = orders.aggregate(
+            order_count=Count('id'),  # "total" choca con el campo Order.total
+            pending=Count('id', filter=Q(status='pending')),
+            partial=Count('id', filter=Q(status='partial')),
+            delivered=Count('id', filter=Q(status='delivered')),
+            cancelled=Count('id', filter=Q(status='cancelled')),
+            total_revenue=Sum('total', filter=Q(status='delivered')),
+            total_billed=Sum('total', filter=~Q(status='cancelled')),
+        )
+        totals['total'] = totals.pop('order_count')
+        totals['total_revenue'] = float(totals['total_revenue'] or 0)
+        totals['total_billed'] = float(totals['total_billed'] or 0)
+        return Response(totals)
+
+    @action(detail=False, methods=['get'])
+    def monthly(self, request):
+        """
+        Evolución de los últimos N meses (?months=12, máx. 36): pedidos y facturado (no
+        anulados, por mes de creación), entregado, y cobrado (pagos aprobados por mes del
+        pago) solo si el usuario puede ver la sección Pagos.
+        """
+        try:
+            count = min(max(int(request.query_params.get('months', 12)), 1), 36)
+        except ValueError:
+            return Response({'error': 'months debe ser un número.'}, status=400)
+        months = last_months(count)
+        start = month_bounds(*months[0])[0]
+        tz = timezone.get_current_timezone()
+
+        rows = (
+            Order.objects.filter(created_at__gte=start).exclude(status='cancelled')
+            .annotate(m=TruncMonth('created_at', tzinfo=tz)).values('m')
+            .annotate(orders=Count('id'), billed=Sum('total'), delivered=Sum('total', filter=Q(status='delivered')))
+        )
+        by_month = {(r['m'].year, r['m'].month): r for r in rows}
+
+        show_collected = can_view_section(request.user, 'payments')
+        collected = {}
+        if show_collected:
+            for r in (Payment.objects.filter(status='approved', created_at__gte=start)
+                      .annotate(m=TruncMonth('created_at', tzinfo=tz)).values('m').annotate(s=Sum('amount'))):
+                collected[(r['m'].year, r['m'].month)] = r['s']
+
+        result = []
+        for year, month in months:
+            row = by_month.get((year, month), {})
+            item = {
+                'month': f'{year}-{month:02d}',
+                'orders': row.get('orders', 0),
+                'billed': float(row.get('billed') or 0),
+                'delivered': float(row.get('delivered') or 0),
+            }
+            if show_collected:
+                item['collected'] = float(collected.get((year, month)) or 0)
+            result.append(item)
+        return Response({'months': result, 'includes_collected': show_collected})
 
 
 VALID_ROUTE_TRANSITIONS = {

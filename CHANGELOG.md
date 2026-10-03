@@ -4,6 +4,13 @@ Cambios de cada versión, de la más reciente a la más antigua. Este archivo se
 muestra en la aplicación en **Sistema → Acerca de**: cada versión es un título
 `## vX.Y.Z — AAAA-MM-DD` seguido de una lista de cambios con `- `.
 
+## v1.0.12 — 2026-10-02
+- **Dashboards mensualizados**: Dashboard y Deudas tienen un selector de período (todo el historial o un mes, con flechas para pasar de mes). El período elegido se mantiene al pasar de un tablero al otro.
+- Nuevo gráfico **Evolución mensual** de los últimos 12 meses (facturado y cobrado), con vista de tabla; tocando un mes se ve su detalle.
+- Nuevas tarjetas de **Facturado** y **Cobrado** en el Dashboard.
+- Corrección: la "Deuda total" del Dashboard sumaba solo los primeros 8 clientes con saldo.
+- Corrección: a los usuarios sin permiso en alguna sección el Dashboard les aparecía vacío; ahora ven las tarjetas que les corresponden.
+
 ## v1.0.11 — 2026-10-02
 - Nueva pantalla **Sistema → Acerca de** (solo administradores) con la versión instalada y este historial de cambios.
 

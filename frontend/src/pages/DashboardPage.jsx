@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { productsApi, ordersApi, paymentsApi } from '../services/api'
 import { Package, ShoppingCart, CreditCard, AlertTriangle, TrendingUp, ArrowUpRight } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { Link } from 'react-router-dom'
+import PeriodSelector, { monthLabel, usePeriod } from '../components/PeriodSelector'
+import MonthlyChart from '../components/MonthlyChart'
 
 const STATUS_LABELS = {
   pending: 'Pendiente',
@@ -22,30 +25,38 @@ function fmt(n) {
 }
 
 export default function DashboardPage() {
+  const [period, setPeriod] = usePeriod()
   const [productStats, setProductStats] = useState(null)
   const [orderStats, setOrderStats] = useState(null)
   const [paymentStats, setPaymentStats] = useState(null)
   const [lowStock, setLowStock] = useState([])
-  const [debtors, setDebtors] = useState([])
+  const [debtors, setDebtors] = useState(null)
+  const [monthly, setMonthly] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Datos que no dependen del período (stock actual y evolución de los últimos 12 meses)
   useEffect(() => {
-    Promise.all([
-      productsApi.stats(),
-      ordersApi.stats(),
-      paymentsApi.stats(),
-      productsApi.lowStock(),
-      ordersApi.debtDashboard(),
-    ]).then(([p, o, pay, ls, debt]) => {
-      setProductStats(p.data)
-      setOrderStats(o.data)
-      setPaymentStats(pay.data)
-      setLowStock(ls.data.slice(0, 5))
-      setDebtors((debt.data || []).slice(0, 8))
-    }).finally(() => setLoading(false))
+    Promise.allSettled([productsApi.stats(), productsApi.lowStock(), ordersApi.monthly({ months: 12 })])
+      .then(([p, ls, mon]) => {
+        setProductStats(p.status === 'fulfilled' ? p.value.data : null)
+        setLowStock(ls.status === 'fulfilled' ? ls.value.data.slice(0, 5) : [])
+        setMonthly(mon.status === 'fulfilled' ? mon.value.data : null)
+      })
   }, [])
 
-  if (loading) return <div className="loading"><div className="spinner" /> Cargando dashboard...</div>
+  // Datos del período. Cada fuente es independiente: si el usuario no tiene permiso
+  // en una sección (403), solo se oculta esa tarjeta.
+  useEffect(() => {
+    const params = period ? { month: period } : undefined
+    setLoading(true)
+    Promise.allSettled([ordersApi.stats(params), paymentsApi.stats(params), ordersApi.debtDashboard(params)])
+      .then(([o, pay, debt]) => {
+        setOrderStats(o.status === 'fulfilled' ? o.value.data : null)
+        setPaymentStats(pay.status === 'fulfilled' ? pay.value.data : null)
+        setDebtors(debt.status === 'fulfilled' ? debt.value.data || [] : null)
+      })
+      .finally(() => setLoading(false))
+  }, [period])
 
   const orderChartData = orderStats
     ? ['pending', 'partial', 'delivered', 'cancelled']
@@ -53,61 +64,99 @@ export default function DashboardPage() {
         .filter(d => d.value > 0)
     : []
 
-  const totalDebt = debtors.reduce((acc, d) => acc + d.balance, 0)
+  // Deuda total de TODOS los deudores (la tabla de abajo muestra solo los primeros 8)
+  const totalDebt = (debtors || []).reduce((acc, d) => acc + d.balance, 0)
+  const inMonth = Boolean(period)
+  const periodText = inMonth ? monthLabel(period) : 'todo el historial'
+  const debtLink = `/debt-dashboard${period ? `?mes=${period}` : ''}`
 
   return (
     <>
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Resumen general del sistema</p>
+          <p className="page-subtitle">Resumen de {periodText}</p>
         </div>
+        <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
       <div className="page-body">
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-label">Productos activos</div>
-            <div className="stat-value accent">{productStats?.total_products ?? '–'}</div>
-            <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><Package size={12} /> Total en catálogo</div>
-          </div>
+        {monthly && (
+          <MonthlyChart data={monthly.months} includesCollected={monthly.includes_collected}
+            selected={period} onSelect={m => setPeriod(m === period ? '' : m)} />
+        )}
 
-          <div className="stat-card">
-            <div className="stat-label">Stock bajo mínimo</div>
-            <div className="stat-value yellow">{productStats?.low_stock_count ?? '–'}</div>
-            <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><AlertTriangle size={12} /> Requieren atención</div>
-          </div>
+        {loading && !orderStats ? <div className="loading"><div className="spinner" /> Cargando dashboard...</div> : (
+        <>
+        <div className="stats-grid" style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
+          {orderStats && (
+            <div className="stat-card">
+              <div className="stat-label">{inMonth ? 'Pedidos del mes' : 'Pedidos totales'}</div>
+              <div className="stat-value">{orderStats.total}</div>
+              <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><ShoppingCart size={12} /> {(orderStats.pending || 0) + (orderStats.partial || 0)} en curso</div>
+            </div>
+          )}
 
-          <div className="stat-card">
-            <div className="stat-label">Pedidos totales</div>
-            <div className="stat-value">{orderStats?.total ?? '–'}</div>
-            <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><ShoppingCart size={12} /> {(orderStats?.pending || 0) + (orderStats?.partial || 0)} en curso</div>
-          </div>
+          {orderStats && (
+            <div className="stat-card">
+              <div className="stat-label">Facturado</div>
+              <div className="stat-value accent">${fmt(orderStats.total_billed)}</div>
+              <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><TrendingUp size={12} /> Pedidos no anulados{inMonth ? ' del mes' : ''}</div>
+            </div>
+          )}
 
-          <div className="stat-card">
-            <div className="stat-label">Ingresos (entregados)</div>
-            <div className="stat-value green">${fmt(orderStats?.total_revenue)}</div>
-            <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><TrendingUp size={12} /> Total facturado entregado</div>
-          </div>
+          {orderStats && (
+            <div className="stat-card">
+              <div className="stat-label">Ingresos (entregados)</div>
+              <div className="stat-value green">${fmt(orderStats.total_revenue)}</div>
+              <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><TrendingUp size={12} /> {inMonth ? 'Pedidos del mes ya entregados' : 'Total facturado entregado'}</div>
+            </div>
+          )}
 
-          <div className="stat-card">
-            <div className="stat-label">Deuda total</div>
-            <div className="stat-value red">${fmt(totalDebt)}</div>
-            <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><CreditCard size={12} /> {debtors.length} clientes con saldo</div>
-          </div>
+          {paymentStats && (
+            <div className="stat-card">
+              <div className="stat-label">{inMonth ? 'Cobrado en el mes' : 'Cobrado'}</div>
+              <div className="stat-value green">${fmt(paymentStats.total_approved)}</div>
+              <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><CreditCard size={12} /> Pagos aprobados</div>
+            </div>
+          )}
 
-          <div className="stat-card">
-            <div className="stat-label">Sin stock</div>
-            <div className="stat-value red">{productStats?.out_of_stock_count ?? '–'}</div>
-            <div className="stat-meta">Productos agotados</div>
-          </div>
+          {debtors && (
+            <div className="stat-card">
+              <div className="stat-label">{inMonth ? 'Saldo de pedidos del mes' : 'Deuda total'}</div>
+              <div className="stat-value red">${fmt(totalDebt)}</div>
+              <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><CreditCard size={12} /> {debtors.length} clientes con saldo</div>
+            </div>
+          )}
+
+          {productStats && (
+            <>
+              <div className="stat-card">
+                <div className="stat-label">Productos activos</div>
+                <div className="stat-value accent">{productStats.total_products}</div>
+                <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><Package size={12} /> {inMonth ? 'Estado actual' : 'Total en catálogo'}</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">Stock bajo mínimo</div>
+                <div className="stat-value yellow">{productStats.low_stock_count}</div>
+                <div className="stat-meta flex items-center gap-2" style={{ gap: 6 }}><AlertTriangle size={12} /> {inMonth ? 'Estado actual' : 'Requieren atención'}</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">Sin stock</div>
+                <div className="stat-value red">{productStats.out_of_stock_count}</div>
+                <div className="stat-meta">{inMonth ? 'Estado actual' : 'Productos agotados'}</div>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="two-col-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {/* Order chart */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Estado de pedidos</span>
+              <span className="card-title">Estado de pedidos{inMonth ? ` · ${monthLabel(period)}` : ''}</span>
             </div>
             {orderChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
@@ -128,7 +177,7 @@ export default function DashboardPage() {
           {/* Low stock */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Stock bajo mínimo</span>
+              <span className="card-title">Stock bajo mínimo{inMonth ? ' · estado actual' : ''}</span>
               <a href="/stock" className="btn btn-ghost btn-sm">Ver todos <ArrowUpRight size={12} /></a>
             </div>
             {lowStock.length === 0 ? (
@@ -153,11 +202,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Debt table */}
-        {debtors.length > 0 && (
+        {debtors && debtors.length > 0 && (
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-header">
-              <span className="card-title">Clientes con saldo pendiente</span>
-              <a href="/debt-dashboard" className="btn btn-ghost btn-sm">Ver todos <ArrowUpRight size={12} /></a>
+              <span className="card-title">Clientes con saldo pendiente{inMonth ? ` · pedidos de ${monthLabel(period)}` : ''}</span>
+              <Link to={debtLink} className="btn btn-ghost btn-sm">Ver todos <ArrowUpRight size={12} /></Link>
             </div>
             <div className="table-wrapper">
               <table>
@@ -171,7 +220,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {debtors.map(d => (
+                  {debtors.slice(0, 8).map(d => (
                     <tr key={d.customer_id}>
                       <td>
                         <div style={{ fontWeight: 500 }}>{d.customer_name}</div>
@@ -187,6 +236,8 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </>

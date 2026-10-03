@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Sum
 from apps.orders.models import Order
 from apps.orders.services import BusinessRuleError
+from apps.orders.periods import month_range
 from .models import Payment
 from .services import (
     OPEN_STATUSES, check_can_manage, check_transition, check_order_accepts_payments,
@@ -137,7 +138,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
+        """Resumen de pagos; con ?month=AAAA-MM, solo los pagos registrados en ese mes."""
+        try:
+            period = month_range(request.query_params.get('month'))
+        except BusinessRuleError as e:
+            return e.response()
         payments = Payment.objects.all()
+        if period:
+            payments = payments.filter(created_at__gte=period[0], created_at__lt=period[1])
         return Response({
             'total_approved': float(payments.filter(status='approved').aggregate(Sum('amount'))['amount__sum'] or 0),
             'total_pending': float(payments.filter(status='pending').aggregate(Sum('amount'))['amount__sum'] or 0),

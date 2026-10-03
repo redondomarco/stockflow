@@ -28,7 +28,7 @@ echo "Restaurando..."
     echo 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
     gzip -dc "$FILE"
 } | docker compose exec -T db sh -c \
-    'psql --single-transaction -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
+    'PGOPTIONS="-c client_min_messages=warning" psql --single-transaction -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
     || { echo "ERROR: la restauración falló; la base quedó como estaba." >&2; exit 1; }
 
 echo "Restauración completa."

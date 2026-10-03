@@ -974,3 +974,17 @@ tbody tr:hover {
     border-style: dashed;
   }
 }
+
+/* Selector de período de los tableros: siempre en una fila */
+.period-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.period-selector .form-select { min-width: 170px; }
+
+@media (max-width: 640px) {
+  .page-header > .period-selector { flex-wrap: nowrap; width: 100%; }
+  .period-selector .form-select { flex: 1; min-width: 0; }
+}

@@ -23,6 +23,8 @@ LIST_ENDPOINTS = [
     '/api/orders/zones/',
     '/api/orders/price-lists/',
     '/api/orders/customers/debt_dashboard/',
+    '/api/orders/monthly/',
+    '/api/orders/stats/',
     '/api/products/',
     '/api/products/stats/',
     '/api/products/low_stock/',

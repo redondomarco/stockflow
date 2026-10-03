@@ -99,14 +99,15 @@ export const ordersApi = {
   update: (id, data) => api.patch(`/orders/${id}/`, data),
   deliver: (id, data) => api.post(`/orders/${id}/deliver/`, data),
   changeStatus: (id, data) => api.post(`/orders/${id}/change_status/`, data),
-  stats: () => api.get('/orders/stats/'),
+  stats: (params) => api.get('/orders/stats/', { params }),
+  monthly: (params) => api.get('/orders/monthly/', { params }),
   customers: (params) => api.get('/orders/customers/', { params }),
   createCustomer: (data) => api.post('/orders/customers/', data),
   updateCustomer: (id, data) => api.patch(`/orders/customers/${id}/`, data),
   getCustomerProducts: (id) => api.get(`/orders/customers/${id}/products/`),
   setCustomerProducts: (id, productIds) => api.post(`/orders/customers/${id}/products/`, { product_ids: productIds }),
   accountStatement: (customerId) => api.get(`/orders/customers/${customerId}/account_statement/`),
-  debtDashboard: () => api.get('/orders/customers/debt_dashboard/'),
+  debtDashboard: (params) => api.get('/orders/customers/debt_dashboard/', { params }),
   exportCustomers: () => api.get('/orders/customers/export_csv/', { responseType: 'blob' }),
   importCustomers: (file) => {
     const form = new FormData()
@@ -166,7 +167,7 @@ export const paymentsApi = {
   reject: (id, data) => api.post(`/payments/${id}/reject/`, data),
   refund: (id, data) => api.post(`/payments/${id}/refund/`, data),
   markReviewed: (id) => api.post(`/payments/${id}/mark_reviewed/`),
-  stats: () => api.get('/payments/stats/'),
+  stats: (params) => api.get('/payments/stats/', { params }),
 }
 
 export default api

@@ -27,3 +27,13 @@ class SectionPermission(BasePermission):
         if level == 'read' and request.method not in READ_METHODS:
             return False
         return True
+
+
+def can_view_section(user, section):
+    """True si el usuario puede ver (leer) la sección; superusuarios siempre."""
+    if not (user and user.is_authenticated):
+        return False
+    if user.is_superuser:
+        return True
+    profile = getattr(user, 'profile', None)
+    return not profile or profile.get_level(section) != 'hidden'
